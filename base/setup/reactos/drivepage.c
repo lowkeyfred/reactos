@@ -48,28 +48,73 @@ static const INT  column_alignment[MAX_LIST_COLUMNS] = {LVCFMT_LEFT, LVCFMT_LEFT
 
 /* FUNCTIONS ****************************************************************/
 
-static INT_PTR CALLBACK
-MoreOptDlgProc(HWND hwndDlg,
-               UINT uMsg,
-               WPARAM wParam,
-               LPARAM lParam)
+static INT_PTR
+CALLBACK
+MoreOptDlgProc(
+    _In_ HWND hDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam)
 {
     PSETUPDATA pSetupData;
 
     /* Retrieve pointer to the global setup data */
-    pSetupData = (PSETUPDATA)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
+    pSetupData = (PSETUPDATA)GetWindowLongPtrW(hDlg, GWLP_USERDATA);
 
     switch (uMsg)
     {
         case WM_INITDIALOG:
         {
+            /***/ LONG MachineType; /***/ // FIXME: Must be moved in USetupData
+            BOOL bIsBIOS;
+            UINT uID;
+            INT nSel;
+            WCHAR szText[50];
+
             /* Save pointer to the global setup data */
             pSetupData = (PSETUPDATA)lParam;
-            SetWindowLongPtrW(hwndDlg, GWLP_USERDATA, (DWORD_PTR)pSetupData);
+            SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)pSetupData);
 
-            CheckDlgButton(hwndDlg, IDC_INSTFREELDR, BST_CHECKED);
-            SetDlgItemTextW(hwndDlg, IDC_PATH,
+            SetDlgItemTextW(hDlg, IDC_PATH,
                             pSetupData->USetupData.InstallationDirectory);
+
+
+            // FIXME: The following is a temporary HACK until we get
+            // a uniformized "MachineType" inside USetupData.
+            // This check should actually be done based on the platform type.
+            // For the time being we just do it based on the selected disk type.
+            {
+            PPARTENTRY GetSelectedPartition(HWND, HTLITEM*);
+            PPARTENTRY PartEntry;
+            PartEntry = GetSelectedPartition(GetDlgItem(GetParent(hDlg), IDC_PARTITION), NULL);
+            if (!PartEntry)
+                MachineType = PARTITION_STYLE_MBR;
+            else
+                MachineType = PartEntry->DiskEntry->DiskStyle;
+            }
+
+            /* Initialize the list of possible bootloader locations */
+            bIsBIOS = (MachineType == PARTITION_STYLE_MBR);
+            for (uID = IDS_BOOTLOADER_NOINST; uID <= IDS_BOOTLOADER_VBRONLY; ++uID)
+            {
+                if ( ( bIsBIOS && (uID == IDS_BOOTLOADER_SYSTEM)) ||
+                     (!bIsBIOS && (uID == IDS_BOOTLOADER_MBRVBR || uID == IDS_BOOTLOADER_VBRONLY)) )
+                {
+                    continue; // Skip this choice
+                }
+
+                LoadStringW(pSetupData->hInstance, uID, szText, ARRAYSIZE(szText));
+                nSel = SendDlgItemMessageW(hDlg, IDC_INSTFREELDR, CB_ADDSTRING, 0, (LPARAM)szText);
+                if (nSel != CB_ERR && nSel != CB_ERRSPACE)
+                {
+                    UINT uBldrLoc = uID - IDS_BOOTLOADER_NOINST - (bIsBIOS && (uID >= IDS_BOOTLOADER_SYSTEM) ? 1 : 0);
+                    SendDlgItemMessageW(hDlg, IDC_INSTFREELDR, CB_SETITEMDATA, nSel, uBldrLoc);
+                }
+            }
+            /* Select the default location entry */
+            SendDlgItemMessageW(hDlg, IDC_INSTFREELDR, CB_SETCURSEL,
+                                IDS_BOOTLOADER_SYSTEM - IDS_BOOTLOADER_NOINST, 0);
+
             break;
         }
 
@@ -78,15 +123,30 @@ MoreOptDlgProc(HWND hwndDlg,
             {
                 case IDOK:
                 {
-                    GetDlgItemTextW(hwndDlg, IDC_PATH,
+                    INT nSel;
+                    UINT uBldrLoc;
+
+                    /* Retrieve the installation path */
+                    GetDlgItemTextW(hDlg, IDC_PATH,
                                     pSetupData->USetupData.InstallationDirectory,
                                     ARRAYSIZE(pSetupData->USetupData.InstallationDirectory));
-                    EndDialog(hwndDlg, IDOK);
+
+                    /* Retrieve the bootloader location */
+                    nSel = SendDlgItemMessageW(hDlg, IDC_INSTFREELDR, CB_GETCURSEL, 0, 0);
+                    if (nSel == CB_ERR)
+                        nSel = IDS_BOOTLOADER_SYSTEM - IDS_BOOTLOADER_NOINST; // Default location entry
+                    uBldrLoc = SendDlgItemMessageW(hDlg, IDC_INSTFREELDR, CB_GETITEMDATA, nSel, 0);
+                    if (uBldrLoc == CB_ERR)
+                        uBldrLoc = 2; // Default location
+                    uBldrLoc = min(max(uBldrLoc, 0), 3); // Technically, 3 if MBR, 2 if not.
+                    pSetupData->USetupData.BootLoaderLocation = uBldrLoc;
+
+                    EndDialog(hDlg, IDOK);
                     return TRUE;
                 }
 
                 case IDCANCEL:
-                    EndDialog(hwndDlg, IDCANCEL);
+                    EndDialog(hDlg, IDCANCEL);
                     return TRUE;
             }
             break;
@@ -682,7 +742,7 @@ DriveDlgProc(
             {
                 case IDC_PARTMOREOPTS:
                     DialogBoxParamW(pSetupData->hInstance,
-                                    MAKEINTRESOURCEW(IDD_BOOTOPTIONS),
+                                    MAKEINTRESOURCEW(IDD_ADVINSTOPTS),
                                     hwndDlg,
                                     MoreOptDlgProc,
                                     (LPARAM)pSetupData);
