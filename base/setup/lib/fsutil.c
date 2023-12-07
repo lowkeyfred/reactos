@@ -770,9 +770,9 @@ ChkdskPartition(
     ASSERT(PartEntry->IsPartitioned && PartEntry->PartitionNumber != 0);
 
     /* HACK: Do not try to check a partition with an unknown filesystem */
-    if (!*PartEntry->FileSystem)
+    if (!*PartEntry->Volume.FileSystem)
     {
-        PartEntry->NeedsCheck = FALSE;
+        PartEntry->Volume.NeedsCheck = FALSE;
         return STATUS_SUCCESS;
     }
 
@@ -785,7 +785,7 @@ ChkdskPartition(
 
     /* Check the partition */
     Status = ChkdskFileSystem(PartitionRootPath,
-                              PartEntry->FileSystem,
+                              PartEntry->Volume.FileSystem,
                               FixErrors,
                               Verbose,
                               CheckOnlyIfDirty,
@@ -794,7 +794,7 @@ ChkdskPartition(
     if (!NT_SUCCESS(Status))
         return Status;
 
-    PartEntry->NeedsCheck = FALSE;
+    PartEntry->Volume.NeedsCheck = FALSE;
     return STATUS_SUCCESS;
 }
 
@@ -895,14 +895,14 @@ FormatPartition(
         return Status;
 
 //
-// TODO: Here, call a partlist.c function that update the actual
-// FS name and the label fields of the volume.
+// TODO: Here, call a partlist.c function that updates
+// the actual FS name and the label fields of the volume.
 //
-    PartEntry->FormatState = Formatted;
+    PartEntry->Volume.FormatState = Formatted;
 
     /* Set the new partition's file system proper */
-    RtlStringCbCopyW(PartEntry->FileSystem,
-                     sizeof(PartEntry->FileSystem),
+    RtlStringCbCopyW(PartEntry->Volume.FileSystem,
+                     sizeof(PartEntry->Volume.FileSystem),
                      FileSystemName);
 
     PartEntry->New = FALSE;
@@ -986,13 +986,13 @@ DoChecking(
 
 #if 0
     /* HACK: Do not try to check a partition with an unknown filesystem */
-    if (!*PartEntry->FileSystem)
+    if (!*PartEntry->Volume.FileSystem)
     {
-        PartEntry->NeedsCheck = FALSE;
+        PartEntry->Volume.NeedsCheck = FALSE;
         return FSVOL_SKIP;
     }
 #else
-    ASSERT(*PartEntry->FileSystem);
+    ASSERT(*PartEntry->Volume.FileSystem);
 #endif
 
     RtlZeroMemory(&PartInfo, sizeof(PartInfo));
@@ -1037,6 +1037,47 @@ EndCheck:
     return Result;
 }
 
+static
+PPARTENTRY
+GetNextUnformattedPartition(
+    _In_ PPARTLIST List,
+    _In_opt_ PPARTENTRY CurrentPart)
+{
+    /* Loop each available disk and partition */
+    while ((CurrentPart = GetAdjPartition(List, CurrentPart,
+                                          ENUM_REGION_NEXT | ENUM_REGION_PARTITIONED)))
+    {
+        if (CurrentPart->New /**/&& (CurrentPart->Volume.FormatState == Unformatted)/**/)
+        {
+            /* Found a candidate, return it */
+            return CurrentPart;
+        }
+    }
+
+    return NULL;
+}
+
+static
+PPARTENTRY
+GetNextUncheckedPartition(
+    _In_ PPARTLIST List,
+    _In_opt_ PPARTENTRY CurrentPart)
+{
+    /* Loop each available disk and partition */
+    while ((CurrentPart = GetAdjPartition(List, CurrentPart,
+                                          ENUM_REGION_NEXT | ENUM_REGION_PARTITIONED)))
+    {
+        if (CurrentPart->Volume.NeedsCheck)
+        {
+            /* Found a candidate, return it */
+            ASSERT(CurrentPart->Volume.FormatState == Formatted);
+            return CurrentPart;
+        }
+    }
+
+    return NULL;
+}
+
 BOOLEAN
 FsVolCommitOpsQueue(
     IN PPARTLIST PartitionList,
@@ -1046,6 +1087,7 @@ FsVolCommitOpsQueue(
     IN PVOID Context OPTIONAL)
 {
     BOOLEAN Success = TRUE; // Suppose success.
+    BOOLEAN Restart = TRUE; // Restart enumerating unformatted partitions.
     FSVOL_OP Result;
     PPARTENTRY PartEntry;
 
@@ -1081,8 +1123,8 @@ FsVolCommitOpsQueue(
      * we must perform a filesystem check of both the system and the
      * installation partitions.
      */
-    SystemPartition->NeedsCheck = TRUE;
-    InstallPartition->NeedsCheck = TRUE;
+    SystemPartition->Volume.NeedsCheck = TRUE;
+    InstallPartition->Volume.NeedsCheck = TRUE;
 
     Result = FsVolCallback(Context,
                            FSVOLNOTIFY_STARTQUEUE,
@@ -1126,10 +1168,10 @@ NextFormat:
             ASSERT(SystemPartition->IsPartitioned);
 
             if ((SystemPartition != InstallPartition) &&
-                (SystemPartition->FormatState == Unformatted))
+                (SystemPartition->Volume.FormatState == Unformatted))
             {
                 PartEntry = SystemPartition;
-                PartEntry->NeedsCheck = TRUE;
+                PartEntry->Volume.NeedsCheck = TRUE;
 
                 // TODO: Should we let the user use a custom file-system,
                 // or should we always use FAT(32) for it?
@@ -1141,16 +1183,15 @@ NextFormat:
             else
             {
                 PartEntry = InstallPartition;
-                PartEntry->NeedsCheck = TRUE;
+                PartEntry->Volume.NeedsCheck = TRUE;
 
                 if (SystemPartition != InstallPartition)
                 {
                     /* The system partition is separate, so it had better be formatted! */
-                    ASSERT((SystemPartition->FormatState == Preformatted) ||
-                           (SystemPartition->FormatState == Formatted));
+                    ASSERT(SystemPartition->Volume.FormatState == Formatted);
 
                     /* Require a filesystem check on the system partition too */
-                    SystemPartition->NeedsCheck = TRUE;
+                    SystemPartition->Volume.NeedsCheck = TRUE;
                 }
 
                 DPRINT1("FormatState: Start --> FormatInstallPartition\n");
@@ -1162,7 +1203,7 @@ NextFormat:
         case FormatSystemPartition:
         {
             PartEntry = InstallPartition;
-            PartEntry->NeedsCheck = TRUE;
+            PartEntry->Volume.NeedsCheck = TRUE;
 
             DPRINT1("FormatState: FormatSystemPartition --> FormatInstallPartition\n");
             FormatState = FormatInstallPartition;
@@ -1172,12 +1213,16 @@ NextFormat:
         case FormatInstallPartition:
         case FormatOtherPartition:
         {
-            if (GetNextUnformattedPartition(PartitionList,
-                                            NULL,
-                                            &PartEntry))
+            /* Check whether we need to restart enumerating unformatted partitions */
+            if (Restart)
             {
-                ASSERT(PartEntry);
-                PartEntry->NeedsCheck = TRUE;
+                PartEntry = NULL;
+                Restart = FALSE;
+            }
+            PartEntry = GetNextUnformattedPartition(PartitionList, PartEntry);
+            if (PartEntry)
+            {
+                PartEntry->Volume.NeedsCheck = TRUE;
 
                 if (FormatState == FormatInstallPartition)
                     DPRINT1("FormatState: FormatInstallPartition --> FormatOtherPartition\n");
@@ -1248,14 +1293,15 @@ StartCheckQueue:
     if (Result == FSVOL_ABORT)
         return FALSE;
 
+    PartEntry = NULL;
 NextCheck:
-    if (!GetNextUncheckedPartition(PartitionList, NULL, &PartEntry))
+    PartEntry = GetNextUncheckedPartition(PartitionList, PartEntry);
+    if (!PartEntry)
     {
         Success = TRUE;
         goto EndCheck;
     }
 
-    ASSERT(PartEntry);
     Result = DoChecking(PartEntry, Context, FsVolCallback);
     if (Result == FSVOL_ABORT)
     {

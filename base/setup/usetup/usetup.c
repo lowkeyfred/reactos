@@ -504,14 +504,20 @@ GetNTOSInstallationName(
     IN SIZE_T cchBufferSize)
 {
     PNTOS_INSTALLATION NtOsInstall = (PNTOS_INSTALLATION)GetListEntryData(Entry);
-    PPARTENTRY PartEntry = NtOsInstall->PartEntry;
 
-    if (PartEntry && PartEntry->DriveLetter)
+    /* Retrieve the corresponding disk and partition */
+    PDISKENTRY DiskEntry = NULL;
+    PPARTENTRY PartEntry = NULL; // NtOsInstall->PartEntry;
+    GetDiskOrPartition(PartitionList,
+                       NtOsInstall->DiskNumber, NtOsInstall->PartitionNumber,
+                       &DiskEntry, &PartEntry);
+
+    if (PartEntry && PartEntry->Volume.DriveLetter)
     {
         /* We have retrieved a partition that is mounted */
         return RtlStringCchPrintfA(Buffer, cchBufferSize,
                                    "%C:%S  \"%S\"",
-                                   PartEntry->DriveLetter,
+                                   PartEntry->Volume.DriveLetter,
                                    NtOsInstall->PathComponent,
                                    NtOsInstall->InstallationName);
     }
@@ -1685,12 +1691,12 @@ SelectPartitionPage(PINPUT_RECORD Ir)
         else if ((Ir->Event.KeyEvent.uChar.AsciiChar == 0x00) &&
                  (Ir->Event.KeyEvent.wVirtualKeyCode == VK_DOWN))  /* DOWN */
         {
-            ScrollDownPartitionList(&ListUi);
+            ScrollUpDownPartitionList(&ListUi, TRUE);
         }
         else if ((Ir->Event.KeyEvent.uChar.AsciiChar == 0x00) &&
                  (Ir->Event.KeyEvent.wVirtualKeyCode == VK_UP))  /* UP */
         {
-            ScrollUpPartitionList(&ListUi);
+            ScrollUpDownPartitionList(&ListUi, FALSE);
         }
         else if (Ir->Event.KeyEvent.wVirtualKeyCode == VK_RETURN)  /* ENTER */
         {
@@ -1790,7 +1796,7 @@ SelectPartitionPage(PINPUT_RECORD Ir)
 // TODO: Do something similar before trying to format the partition?
             if (!CurrentPartition->New &&
                 !IsContainerPartition(CurrentPartition->PartitionType) &&
-                CurrentPartition->FormatState != Unformatted)
+                CurrentPartition->Volume.FormatState != Unformatted)
             {
                 ASSERT(CurrentPartition->PartitionNumber != 0);
 
@@ -2396,7 +2402,7 @@ Restart:
                         LineBuffer);
 
     /* Show "This Partition will be formatted next" only if it is unformatted */
-    if (PartEntry->New || PartEntry->FormatState == Unformatted)
+    if (PartEntry->New || PartEntry->Volume.FormatState == Unformatted)
         CONSOLE_SetTextXY(6, 14, MUIGetString(STRING_PARTFORMAT));
 
     ASSERT(FileSystemList == NULL);
@@ -2428,7 +2434,7 @@ Restart:
     // TODO: Display only the FSes compatible with the selected partition!
     FileSystemList = CreateFileSystemList(6, 26,
                                           PartEntry->New ||
-                                          PartEntry->FormatState == Unformatted,
+                                          PartEntry->Volume.FormatState == Unformatted,
                                           DefaultFs);
     if (FileSystemList == NULL)
     {
@@ -2483,7 +2489,7 @@ Restart:
         {
             if (!FileSystemList->Selected->FileSystem)
             {
-                ASSERT(!PartEntry->New && PartEntry->FormatState != Unformatted);
+                ASSERT(!PartEntry->New && PartEntry->Volume.FormatState != Unformatted);
 
                 /*
                  * Skip formatting this partition. We will also ignore
@@ -2493,7 +2499,7 @@ Restart:
                 if (PartEntry != SystemPartition &&
                     PartEntry != InstallPartition)
                 {
-                    PartEntry->NeedsCheck = FALSE;
+                    PartEntry->Volume.NeedsCheck = FALSE;
                 }
 
                 // /* Reset the filesystem list */
@@ -2769,7 +2775,7 @@ FsVolCallback(
              * Partition checking is not supported with the current filesystem,
              * so disable FS checks on it.
              */
-            PartInfo->PartEntry->NeedsCheck = FALSE;
+            PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
 
             RtlStringCbPrintfA(Buffer,
                                sizeof(Buffer),
@@ -2777,7 +2783,7 @@ FsVolCallback(
                                "\n"
                                "  \x07  Press ENTER to continue Setup.\n"
                                "  \x07  Press F3 to quit Setup.",
-                               PartInfo->PartEntry->FileSystem /* PartInfo->FileSystemName */);
+                               PartInfo->PartEntry->Volume.FileSystem /* PartInfo->FileSystemName */);
 
             PopupError(Buffer,
                        MUIGetString(STRING_QUITCONTINUE),
@@ -2821,7 +2827,7 @@ FsVolCallback(
             return FSVOL_SKIP;
         }
 
-        PartInfo->PartEntry->NeedsCheck = FALSE;
+        PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
         return FSVOL_SKIP;
     }
 
@@ -2874,7 +2880,7 @@ FsVolCallback(
 
         ASSERT(PartInfo);
         EndCheck(PartInfo->ErrorStatus);
-        // PartInfo->PartEntry->NeedsCheck = FALSE;
+        // PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
         return 0;
     }
 
@@ -3479,7 +3485,7 @@ RegistryPage(PINPUT_RECORD Ir)
     Error = UpdateRegistry(&USetupData,
                            RepairUpdateFlag,
                            PartitionList,
-                           InstallPartition->DriveLetter,
+                           InstallPartition->Volume.DriveLetter,
                            SelectedLanguageId,
                            RegistryStatus,
                            &s_SubstSettings);
@@ -3720,11 +3726,11 @@ BootLoaderHardDiskPage(PINPUT_RECORD Ir)
         Status = InstallVBRToPartition(&USetupData.SystemRootPath,
                                        &USetupData.SourceRootPath,
                                        &USetupData.DestinationArcPath,
-                                       SystemPartition->FileSystem);
+                                       SystemPartition->Volume.FileSystem);
         if (!NT_SUCCESS(Status))
         {
             MUIDisplayError(ERROR_WRITE_BOOT, Ir, POPUP_WAIT_ENTER,
-                            SystemPartition->FileSystem);
+                            SystemPartition->Volume.FileSystem);
             return FALSE;
         }
 
@@ -3750,11 +3756,11 @@ BootLoaderHardDiskPage(PINPUT_RECORD Ir)
         Status = InstallVBRToPartition(&USetupData.SystemRootPath,
                                        &USetupData.SourceRootPath,
                                        &USetupData.DestinationArcPath,
-                                       SystemPartition->FileSystem);
+                                       SystemPartition->Volume.FileSystem);
         if (!NT_SUCCESS(Status))
         {
             MUIDisplayError(ERROR_WRITE_BOOT, Ir, POPUP_WAIT_ENTER,
-                            SystemPartition->FileSystem);
+                            SystemPartition->Volume.FileSystem);
             return FALSE;
         }
     }

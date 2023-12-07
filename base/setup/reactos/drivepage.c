@@ -242,7 +242,7 @@ PartitionDlgProc(
 
 #if 0
             // FIXME: Use "DefaultFs"?
-            nSel = SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_FINDSTRINGEXACT, 0, (LPARAM)PartEntry->FileSystem);
+            nSel = SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_FINDSTRINGEXACT, 0, (LPARAM)PartEntry->Volume.FileSystem);
 #else
             /* By default select the "FAT" file system */
             DefaultFs = L"FAT";
@@ -254,7 +254,7 @@ PartitionDlgProc(
 
             /* If the partition is originally formatted,
              * add the 'Keep existing filesystem' entry. */
-            if (!(PartEntry->New || PartEntry->FormatState == Unformatted))
+            if (!(PartEntry->New || PartEntry->Volume.FormatState == Unformatted))
             {
                 // ComboBox_InsertString()
                 SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_INSERTSTRING, -1, (LPARAM)L"Existing filesystem");
@@ -673,9 +673,9 @@ PrintPartitionData(
         StringCchPrintfW(LineBuffer, ARRAYSIZE(LineBuffer),
                          // MUIGetString(STRING_HDDINFOUNK5),
                          L"%s (%c%c)",
-                         *PartEntry->VolumeLabel ? PartEntry->VolumeLabel : L"Partition",
-                         (PartEntry->DriveLetter == 0) ? L'-' : PartEntry->DriveLetter,
-                         (PartEntry->DriveLetter == 0) ? L'-' : L':');
+                         *PartEntry->Volume.VolumeLabel ? PartEntry->Volume.VolumeLabel : L"Partition",
+                         (PartEntry->Volume.DriveLetter == 0) ? L'-' : PartEntry->Volume.DriveLetter,
+                         (PartEntry->Volume.DriveLetter == 0) ? L'-' : L':');
     }
 
     /* Allocate and initialize a partition-info structure */
@@ -1322,7 +1322,7 @@ DriveDlgProc(
                                 // (PartEntry != PartEntry->DiskEntry->ExtendedPartition)
                                 !IsContainerPartition(PartEntry->PartitionType) /* alternatively: PartEntry->PartitionNumber != 0 */ &&
                                 // !PartEntry->New &&
-                                (PartEntry->FormatState == Formatted))
+                                (PartEntry->Volume.FormatState == Formatted))
                             {
                                 PropSheet_SetWizButtons(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                             }

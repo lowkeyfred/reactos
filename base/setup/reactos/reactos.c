@@ -529,14 +529,20 @@ AddNTOSInstallationItem(
     IN SIZE_T cchBufferSize)
 {
     PNTOS_INSTALLATION NtOsInstall = (PNTOS_INSTALLATION)GetListEntryData(Entry);
-    PPARTENTRY PartEntry = NtOsInstall->PartEntry;
 
-    if (PartEntry && PartEntry->DriveLetter)
+    /* Retrieve the corresponding disk and partition */
+    PDISKENTRY DiskEntry = NULL;
+    PPARTENTRY PartEntry = NULL; // NtOsInstall->PartEntry;
+    GetDiskOrPartition(SetupData.PartitionList,
+                       NtOsInstall->DiskNumber, NtOsInstall->PartitionNumber,
+                       &DiskEntry, &PartEntry);
+
+    if (PartEntry && PartEntry->Volume.DriveLetter)
     {
         /* We have retrieved a partition that is mounted */
         StringCchPrintfW(Buffer, cchBufferSize,
                          L"%c:%s",
-                         PartEntry->DriveLetter,
+                         PartEntry->Volume.DriveLetter,
                          NtOsInstall->PathComponent);
     }
     else
@@ -957,11 +963,11 @@ SummaryDlgProc(
                                           ARRAYSIZE(CurrentItemText));
                     SetDlgItemTextW(hwndDlg, IDC_KEYBOARD, CurrentItemText);
 
-                    if (InstallPartition->DriveLetter)
+                    if (InstallPartition->Volume.DriveLetter)
                     {
                         StringCchPrintfW(CurrentItemText, ARRAYSIZE(CurrentItemText),
                                          L"%c: \x2014 %wZ",
-                                         InstallPartition->DriveLetter,
+                                         InstallPartition->Volume.DriveLetter,
                                          &pSetupData->USetupData.DestinationRootPath);
                     }
                     else
@@ -1326,7 +1332,7 @@ FsVolCallback(
              * Partition checking is not supported with the current filesystem,
              * so disable FS checks on it.
              */
-            PartInfo->PartEntry->NeedsCheck = FALSE;
+            PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
 
             StringCbPrintfW(Buffer,
                             sizeof(Buffer),
@@ -1334,7 +1340,7 @@ FsVolCallback(
                             L"\n"
                             L"  \x07  Press ENTER to continue Setup.\n"
                             L"  \x07  Press F3 to quit Setup.",
-                            PartInfo->PartEntry->FileSystem /* PartInfo->FileSystemName */);
+                            PartInfo->PartEntry->Volume.FileSystem /* PartInfo->FileSystemName */);
 
             nRet = DisplayMessage(NULL, MB_ICONERROR | MB_OKCANCEL,
                                   L"Error", Buffer);
@@ -1362,7 +1368,7 @@ FsVolCallback(
             return FSVOL_SKIP;
         }
 
-        PartInfo->PartEntry->NeedsCheck = FALSE;
+        PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
         return FSVOL_SKIP;
     }
 
@@ -1438,7 +1444,7 @@ FsVolCallback(
 
         // StartCheck(ChkPartInfo);
         // TODO: Think about which values could be defaulted...
-        // ChkPartInfo->FileSystemName = ChkPartInfo->PartEntry->FileSystem;
+        // ChkPartInfo->FileSystemName = ChkPartInfo->PartEntry->Volume.FileSystem;
         ChkPartInfo->FixErrors = TRUE;
         ChkPartInfo->Verbose = FALSE;
         ChkPartInfo->CheckOnlyIfDirty = TRUE;
@@ -1454,7 +1460,7 @@ FsVolCallback(
 
         // ASSERT(PartInfo);
         // EndCheck(PartInfo->ErrorStatus);
-        // // PartInfo->PartEntry->NeedsCheck = FALSE;
+        // // PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
         return 0;
     }
 
@@ -1818,7 +1824,7 @@ PrepareAndDoCopyThread(
     ErrorNumber = UpdateRegistry(&pSetupData->USetupData,
                                  pSetupData->RepairUpdateFlag,
                                  pSetupData->PartitionList,
-                                 InstallPartition->DriveLetter,
+                                 InstallPartition->Volume.DriveLetter,
                                  pSetupData->SelectedLanguageId,
                                  NULL, //RegistryStatus
                                  NULL /* SubstSettings */);
