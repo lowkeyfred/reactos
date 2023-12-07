@@ -677,10 +677,14 @@ InitSystemPartition(
      */
     if (!SystemPartition->IsPartitioned)
     {
+        /* Automatically create the partition; it will be
+         * formatted later with default parameters */
+        // FIXME: Don't use the whole empty space, but a minimal size
+        // specified from the TXTSETUP.SIF or unattended setup.
         CreatePartition(PartitionList,
                         SystemPartition,
-                        0LL, // SystemPartition->SectorCount.QuadPart,
-                        TRUE);
+                        0ULL);
+        SystemPartition->AutoCreate = TRUE;
         ASSERT(SystemPartition->IsPartitioned);
     }
 

@@ -329,8 +329,7 @@ PartitionDlgProc(
                 {
                     CreatePartition(PartCreateCtx->PartitionList,
                                     PartEntry,
-                                    SectorCount,
-                                    FALSE);
+                                    SectorCount);
                 }
                 else
                 {

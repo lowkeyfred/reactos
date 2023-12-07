@@ -1492,12 +1492,13 @@ LayoutSettingsPage(PINPUT_RECORD Ir)
 }
 
 
-static BOOL
-IsDiskSizeValid(PPARTENTRY PartEntry)
+static BOOLEAN
+IsPartitionLargeEnough(
+    _In_ PPARTENTRY PartEntry)
 {
     ULONGLONG size;
 
-    size = PartEntry->SectorCount.QuadPart * PartEntry->DiskEntry->BytesPerSector;
+    size = GetPartEntrySizeInBytes(PartEntry);
     size = (size + (512 * KB)) / MB;  /* in MBytes */
 
     if (size < USetupData.RequiredPartitionDiskSpace)
@@ -1593,13 +1594,15 @@ SelectPartitionPage(PINPUT_RECORD Ir)
                 ASSERT(CurrentPartition != NULL);
                 ASSERT(!IsContainerPartition(CurrentPartition->PartitionType));
 
+                /* Automatically create the partition on the whole empty space;
+                 * it will be formatted later with default parameters */
                 CreatePartition(PartitionList,
                                 CurrentPartition,
-                                CurrentPartition->SectorCount.QuadPart,
-                                TRUE);
+                                0ULL);
+                CurrentPartition->AutoCreate = TRUE;
 
 // FIXME?? Aren't we going to enter an infinite loop, if this test fails??
-                if (!IsDiskSizeValid(CurrentPartition))
+                if (!IsPartitionLargeEnough(CurrentPartition))
                 {
                     MUIDisplayError(ERROR_INSUFFICIENT_PARTITION_SIZE, Ir, POPUP_WAIT_ANY_KEY,
                                     USetupData.RequiredPartitionDiskSpace);
@@ -1617,7 +1620,7 @@ SelectPartitionPage(PINPUT_RECORD Ir)
             DrawPartitionList(&ListUi); // FIXME: Doesn't make much sense...
 
 // FIXME?? Aren't we going to enter an infinite loop, if this test fails??
-            if (!IsDiskSizeValid(InstallPartition))
+            if (!IsPartitionLargeEnough(InstallPartition))
             {
                 MUIDisplayError(ERROR_INSUFFICIENT_PARTITION_SIZE, Ir, POPUP_WAIT_ANY_KEY,
                                 USetupData.RequiredPartitionDiskSpace);
@@ -1722,13 +1725,15 @@ SelectPartitionPage(PINPUT_RECORD Ir)
                     return SELECT_PARTITION_PAGE;
                 }
 
+                /* Automatically create the partition on the whole empty space;
+                 * it will be formatted later with default parameters */
                 CreatePartition(PartitionList,
                                 CurrentPartition,
-                                0ULL,
-                                TRUE);
+                                0ULL);
+                CurrentPartition->AutoCreate = TRUE;
             }
 
-            if (!IsDiskSizeValid(CurrentPartition))
+            if (!IsPartitionLargeEnough(CurrentPartition))
             {
                 MUIDisplayError(ERROR_INSUFFICIENT_PARTITION_SIZE, Ir, POPUP_WAIT_ANY_KEY,
                                 USetupData.RequiredPartitionDiskSpace);
@@ -2029,7 +2034,6 @@ CreatePartitionPage(PINPUT_RECORD Ir)
     BOOLEAN Cancel;
     ULONG MaxSize;
     ULONGLONG PartSize;
-    ULONGLONG SectorCount;
     WCHAR InputBuffer[50];
     CHAR LineBuffer[100];
 
@@ -2065,9 +2069,8 @@ CreatePartitionPage(PINPUT_RECORD Ir)
 
     while (TRUE)
     {
-        MaxSize = (PartEntry->SectorCount.QuadPart * DiskEntry->BytesPerSector) / MB;  /* in MBytes (rounded) */
-        if (MaxSize > PARTITION_MAXSIZE)
-            MaxSize = PARTITION_MAXSIZE;
+        MaxSize = GetPartEntrySizeInBytes(PartEntry) / MB;  /* in MBytes (rounded) */
+        MaxSize = min(MaxSize, PARTITION_MAXSIZE);
 
         ShowPartitionSizeInputBox(12, 14, xScreen - 12, 17, /* left, top, right, bottom */
                                   MaxSize, InputBuffer, &Quit, &Cancel);
@@ -2087,41 +2090,23 @@ CreatePartitionPage(PINPUT_RECORD Ir)
             PartSize = _wcstoui64(InputBuffer, NULL, 10);
 
             /* Retry if too small or too large */
-            if (PartSize < 1)
-                continue;
-            if (PartSize > MaxSize)
+            if ((PartSize < 1) || (PartSize > MaxSize))
                 continue;
 
             /* Convert to bytes */
-            if (PartSize == MaxSize)
-            {
-                /* Use all of the unpartitioned disk space */
-                SectorCount = PartEntry->SectorCount.QuadPart;
-            }
-            else
-            {
-                /* Calculate the sector count from the size in MB */
-                SectorCount = PartSize * MB / DiskEntry->BytesPerSector;
-
-                /* But never get larger than the unpartitioned disk space */
-                if (SectorCount > PartEntry->SectorCount.QuadPart)
-                    SectorCount = PartEntry->SectorCount.QuadPart;
-            }
-
-            DPRINT("Partition size: %I64u bytes\n", PartSize);
+            PartSize *= MB;
 
             if (PartCreateType == PartTypeData)
             {
                 CreatePartition(PartitionList,
                                 CurrentPartition,
-                                SectorCount,
-                                FALSE);
+                                PartSize);
             }
             else // if (PartCreateType == PartTypeExtended)
             {
                 CreateExtendedPartition(PartitionList,
                                         CurrentPartition,
-                                        SectorCount);
+                                        PartSize);
             }
 
             return SELECT_PARTITION_PAGE;
