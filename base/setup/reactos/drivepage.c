@@ -164,10 +164,10 @@ MoreOptDlgProc(
 
 typedef struct _PARTCREATE_CTX
 {
-    // PSETUPDATA pSetupData;
-    PPARTLIST PartitionList;
-    PPARTINFO PartInfo;
-    ULONG MaxSize;
+    PARTINFO PartInfo; // A copy of the info stored in the TreeList
+    ULONG MaxSizeMB;
+    ULONG PartSizeMB;
+    BOOLEAN MBRExtPart;
 } PARTCREATE_CTX, *PPARTCREATE_CTX;
 
 static INT_PTR
@@ -187,33 +187,30 @@ PartitionDlgProc(
     {
         case WM_INITDIALOG:
         {
-            PPARTINFO PartInfo;
             PPARTENTRY PartEntry;
             PDISKENTRY DiskEntry;
             ULONG Index = 0;
             PCWSTR FileSystemName;
             INT nSel;
             PCWSTR DefaultFs;
-            ULONG MaxSize;
+            ULONG MaxSizeMB;
 
             /* Save dialog context pointer */
             PartCreateCtx = (PPARTCREATE_CTX)lParam;
             SetWindowLongPtrW(hDlg, GWLP_USERDATA, (LONG_PTR)PartCreateCtx);
 
             /* Retrieve the selected partition */
-            PartInfo  = PartCreateCtx->PartInfo;
-            ASSERT(PartInfo);
-            PartEntry = PartInfo->PartEntry;
+            PartEntry = PartCreateCtx->PartInfo.PartEntry;
             DiskEntry = PartEntry->DiskEntry;
 
             /* Set the maximum size the partition can have */
-            MaxSize = GetPartEntrySizeInBytes(PartEntry) / MB;  /* in MBytes (rounded) */
-            MaxSize = min(MaxSize, PARTITION_MAXSIZE);
-            PartCreateCtx->MaxSize = MaxSize;
+            MaxSizeMB = GetPartEntrySizeInBytes(PartEntry) / MB;  /* in MBytes (rounded) */
+            MaxSizeMB = min(MaxSizeMB, PARTITION_MAXSIZE);
+            PartCreateCtx->MaxSizeMB = MaxSizeMB;
 
-            SendDlgItemMessageW(hDlg, IDC_UPDOWN_PARTSIZE, UDM_SETRANGE32, (WPARAM)1, (LPARAM)MaxSize);
-            SendDlgItemMessageW(hDlg, IDC_UPDOWN_PARTSIZE, UDM_SETPOS32, 0, (LPARAM)MaxSize);
-            // SetDlgItemInt(hDlg, IDC_EDIT_PARTSIZE, MaxSize, FALSE);
+            SendDlgItemMessageW(hDlg, IDC_UPDOWN_PARTSIZE, UDM_SETRANGE32, (WPARAM)1, (LPARAM)MaxSizeMB);
+            SendDlgItemMessageW(hDlg, IDC_UPDOWN_PARTSIZE, UDM_SETPOS32, 0, (LPARAM)MaxSizeMB);
+            // SetDlgItemInt(hDlg, IDC_EDIT_PARTSIZE, MaxSizeMB, FALSE);
 
             /* Default to regular partition (non-extended on MBR disks) */
             CheckDlgButton(hDlg, IDC_CHECK_MBREXTPART, BST_UNCHECKED);
@@ -321,70 +318,53 @@ PartitionDlgProc(
 
             case IDOK:
             {
-                PPARTINFO PartInfo = PartCreateCtx->PartInfo;
-                PPARTENTRY PartEntry = PartInfo->PartEntry;
-                /*ULONGLONG*/ ULONG PartSize;
-                BOOLEAN Success;
+                PPARTINFO PartInfo = &PartCreateCtx->PartInfo;
+                // PPARTENTRY PartEntry = PartInfo->PartEntry;
+                INT nSel;
 
-                // PartSize = GetDlgItemInt(hDlg, IDC_EDIT_PARTSIZE, NULL, FALSE);
-                PartSize = (ULONG)SendDlgItemMessageW(hDlg, IDC_UPDOWN_PARTSIZE, UDM_SETPOS32, 0, (LPARAM)NULL);
-                PartSize = min(max(PartSize, 1), PartCreateCtx->MaxSize);
+                /* Collect all the information and return it
+                 * to the caller for creating the partition */
 
-                /* Convert to bytes */
-                PartSize *= MB;
+                // PartCreateCtx->PartSizeMB = GetDlgItemInt(hDlg, IDC_EDIT_PARTSIZE, NULL, FALSE);
+                PartCreateCtx->PartSizeMB = (ULONG)SendDlgItemMessageW(hDlg, IDC_UPDOWN_PARTSIZE, UDM_SETPOS32, 0, (LPARAM)NULL);
+                PartCreateCtx->PartSizeMB = min(max(PartCreateCtx->PartSizeMB, 1), PartCreateCtx->MaxSizeMB);
 
-                if (IsDlgButtonChecked(hDlg, IDC_CHECK_MBREXTPART) != BST_CHECKED)
-                {
-                    Success = CreatePartition(PartCreateCtx->PartitionList,
-                                              PartEntry,
-                                              PartSize);
-                }
-                else
-                {
-                    Success = CreateExtendedPartition(PartCreateCtx->PartitionList,
-                                                      PartEntry,
-                                                      PartSize);
-                }
+                PartCreateCtx->MBRExtPart = (IsDlgButtonChecked(hDlg, IDC_CHECK_MBREXTPART) == BST_CHECKED);
 
-                if (Success)
-                {
-                    /* Initialize formatting options */
 
-                    INT nSel;
+                /* Retrieve the formatting options */
 
 // https://git.reactos.org/?p=reactos.git;a=blob;f=dll/win32/shell32/dialogs/drive.cpp;hb=455f33077599729c27f1f1347ad2f6329d50d1f3#l236
 // https://git.reactos.org/?p=reactos.git;a=blob;f=dll/cpl/console/font.c;hb=455f33077599729c27f1f1347ad2f6329d50d1f3#l223
 
-                    /* Retrieve the selected filesystem */
-                    nSel = SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_GETCURSEL, 0, 0);
-                    // if (nSel == CB_ERR)
-                    //     nSel = ???; // Default entry
-                    // data = SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_GETITEMDATA, nSel, 0);
-                    // if (data == CB_ERR)
-                    //     data = ???; // Default entry
+                /* Retrieve the selected filesystem */
+                nSel = SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_GETCURSEL, 0, 0);
+                // if (nSel == CB_ERR)
+                //     nSel = ???; // Default entry
+                // data = SendDlgItemMessageW(hDlg, IDC_FSTYPE, CB_GETITEMDATA, nSel, 0);
+                // if (data == CB_ERR)
+                //     data = ???; // Default entry
 
-                    if (SendDlgItemMessageW(hDlg, IDC_FSTYPE,
-                                            CB_GETLBTEXT,
-                                            nSel,
-                                            (LPARAM)PartInfo->FileSystemName) == CB_ERR)
-                    {
-                        // return;
-                        // FIXME
-                    }
-
-                    /* Cached input information that will be set to the
-                     * FORMAT_PARTITION_INFO structure given to the
-                     * 'FSVOLNOTIFY_STARTFORMAT' step */
-                    // TODO: Think about which values could be defaulted...
-                    // PartInfo->FileSystemName = SelectedFileSystem->FileSystem;
-                    PartInfo->MediaFlag = FMIFS_HARDDISK;
-                    PartInfo->Label = NULL;
-                    PartInfo->QuickFormat =
-                        (IsDlgButtonChecked(hDlg, IDC_CHECK_QUICKFMT) == BST_CHECKED);
-                    PartInfo->ClusterSize = 0;
+                if (SendDlgItemMessageW(hDlg, IDC_FSTYPE,
+                                        CB_GETLBTEXT,
+                                        nSel,
+                                        (LPARAM)PartInfo->FileSystemName) == CB_ERR)
+                {
+                    // return;
+                    // FIXME
                 }
 
-                // TODO: Consider doing something else if CreatePartition() fails?
+                /* Cached input information that will be set to the
+                 * FORMAT_PARTITION_INFO structure given to the
+                 * 'FSVOLNOTIFY_STARTFORMAT' step */
+                // TODO: Think about which values could be defaulted...
+                // PartInfo->FileSystemName = SelectedFileSystem->FileSystem;
+                PartInfo->MediaFlag = FMIFS_HARDDISK;
+                PartInfo->Label = NULL;
+                PartInfo->QuickFormat =
+                    (IsDlgButtonChecked(hDlg, IDC_CHECK_QUICKFMT) == BST_CHECKED);
+                PartInfo->ClusterSize = 0;
+
                 EndDialog(hDlg, IDOK);
                 return TRUE;
             }
@@ -528,16 +508,12 @@ TreeListGetItemData(
 }
 
 PPARTINFO
-GetSelectedPartition(
+GetItemPartition(
     _In_ HWND hTreeList,
-    _Out_opt_ HTLITEM* phItem)
+    _In_ HTLITEM hItem)
 {
-    HTLITEM hItem, hParentItem;
+    HTLITEM hParentItem;
     PPARTINFO PartInfo;
-
-    hItem = TreeList_GetSelection(hTreeList);
-    if (!hItem)
-        return NULL;
 
     hParentItem = TreeList_GetParent(hTreeList, hItem);
     /* May or may not be a PPARTINFO: this is a PPARTINFO only when hParentItem != NULL */
@@ -545,7 +521,23 @@ GetSelectedPartition(
     if (!hParentItem || !PartInfo)
         return NULL;
 
-    if (phItem)
+    return PartInfo;
+}
+
+PPARTINFO
+GetSelectedPartition(
+    _In_ HWND hTreeList,
+    _Out_opt_ HTLITEM* phItem)
+{
+    HTLITEM hItem;
+    PPARTINFO PartInfo;
+
+    hItem = TreeList_GetSelection(hTreeList);
+    if (!hItem)
+        return NULL;
+
+    PartInfo = GetItemPartition(hTreeList, hItem);
+    if (PartInfo && phItem)
         *phItem = hItem;
 
     return PartInfo;
@@ -564,11 +556,8 @@ FindPartInfoInTreeByPartEntry(
     hItem = TVI_ROOT;
     while ((hItem = TreeList_GetNextItem(hTreeList, hItem, TVGN_NEXTITEM)))
     {
-        /* May or may not be a PPARTINFO: this is a PPARTINFO only when hParentItem != NULL */
-        HTLITEM hParentItem = TreeList_GetParent(hTreeList, hItem);
-        PPARTINFO PartInfo = (PPARTINFO)TreeListGetItemData(hTreeList, hItem);
-
-        if (!hParentItem || !PartInfo)
+        PPARTINFO PartInfo = GetItemPartition(hTreeList, hItem);
+        if (!PartInfo)
             continue;
 
         if (PartInfo->PartEntry == PartEntry)
@@ -655,6 +644,7 @@ PrintPartitionData(
     _In_ PPARTENTRY PartEntry)
 {
     PPARTINFO PartInfo;
+    PDISKENTRY DiskEntry = PartEntry->DiskEntry;
     LARGE_INTEGER PartSize;
     HTLITEM htiPart;
     CHAR PartTypeString[32];
@@ -664,12 +654,26 @@ PrintPartitionData(
     /* Volume name */
     if (PartEntry->IsPartitioned == FALSE)
     {
+        /* Unpartitioned space: Just display the description */
         StringCchPrintfW(LineBuffer, ARRAYSIZE(LineBuffer),
-                         // MUIGetString(STRING_UNPSPACE),
+                         // MUIGetString(STRING_UNPSPACE)
                          L"Unpartitioned space");
     }
     else
+//
+// NOTE: This could be done with the next case.
+//
+    if ((DiskEntry->DiskStyle == PARTITION_STYLE_MBR) &&
+        IsContainerPartition(PartEntry->PartitionType))
     {
+        /* Extended partition container: Just display the partition's type */
+        StringCchPrintfW(LineBuffer, ARRAYSIZE(LineBuffer),
+                         // MUIGetString(STRING_EXTENDED_PARTITION)
+                         L"Extended Partition");
+    }
+    else
+    {
+        /* Drive letter and partition number */
         StringCchPrintfW(LineBuffer, ARRAYSIZE(LineBuffer),
                          // MUIGetString(STRING_HDDINFOUNK5),
                          L"%s (%c%c)",
@@ -694,22 +698,59 @@ PrintPartitionData(
                               LineBuffer, 1, 1,
                               (LPARAM)PartInfo);
 
-    /* Determine partition type */
     *LineBuffer = 0;
     if (PartEntry->IsPartitioned)
     {
         PartTypeString[0] = '\0';
-        if (PartEntry->New == TRUE)
+
+        /*
+         * If the volume's file system is recognized, display the volume label
+         * (if any) and the file system name. Otherwise, display the partition
+         * type if it's not a new partition.
+         */
+        if (*PartEntry->Volume.FileSystem &&
+            _wcsicmp(PartEntry->Volume.FileSystem, L"RAW") != 0)
         {
+            // TODO: Group this part together with the similar one
+            // from below once the strings are in the same encoding...
+            if (PartEntry->New)
+            {
+                StringCchPrintfA(PartTypeString,
+                                 ARRAYSIZE(PartTypeString),
+                                 "New (%S)",
+                                 PartEntry->Volume.FileSystem);
+            }
+            else
+            {
+                StringCchPrintfA(PartTypeString,
+                                 ARRAYSIZE(PartTypeString),
+                                 "%S",
+                                 PartEntry->Volume.FileSystem);
+            }
+            PartType = PartTypeString;
+        }
+        else
+        /* Determine partition type */
+        if (PartEntry->New)
+        {
+            /* Use this description if the partition is new and not planned for formatting */
             PartType = "New (Unformatted)"; // MUIGetString(STRING_UNFORMATTED);
         }
-        else if (PartEntry->IsPartitioned == TRUE)
+        else
         {
+            /* If the partition is not new but its file system is not recognized
+             * (or is not formatted), use the partition type description. */
             GetPartitionTypeString(PartEntry,
                                    PartTypeString,
                                    ARRAYSIZE(PartTypeString));
             PartType = PartTypeString;
         }
+#if 0
+        if (!PartType || !*PartType)
+        {
+            PartType = MUIGetString(STRING_FORMATUNKNOWN);
+        }
+#endif
 
         StringCchPrintfW(LineBuffer, ARRAYSIZE(LineBuffer),
                          L"%S",
@@ -763,32 +804,51 @@ PrintPartitionData(
     }
     TreeList_SetItemText(hWndList, htiPart, 3, LineBuffer);
 
+
+    /* If this is the single extended partition of an MBR disk,
+     * recursively display its logical partitions */
+    if (PartEntry == DiskEntry->ExtendedPartition)
+    {
+        PLIST_ENTRY LogicalEntry;
+        PPARTENTRY LogicalPartEntry;
+
+        for (LogicalEntry = DiskEntry->LogicalPartListHead.Flink;
+             LogicalEntry != &DiskEntry->LogicalPartListHead;
+             LogicalEntry = LogicalEntry->Flink)
+        {
+            LogicalPartEntry = CONTAINING_RECORD(LogicalEntry, PARTENTRY, ListEntry);
+            PrintPartitionData(hWndList, htiPart, NULL, LogicalPartEntry);
+        }
+
+        /* Expand the extended partition node */
+        TreeList_Expand(hWndList, htiPart, TVE_EXPAND);
+    }
+
+
     return htiPart;
 }
 
+/* Called on response to the TVN_DELETEITEM notification sent by the TreeList */
 static
 VOID
 DeleteTreeItem(
     _In_ HWND hWndList,
-    _In_ HTLITEM hItem)
+    _In_ TLITEMW* ptlItem)
 {
-    /* May or may not be a PPARTINFO: this is a PPARTINFO only when hParentItem != NULL */
-    HTLITEM hParentItem = TreeList_GetParent(hWndList, hItem);
-    PPARTINFO PartInfo = (PPARTINFO)TreeListGetItemData(hWndList, hItem);
-/**
-** TEST TEST!!
-**/
-    TLITEMW tlItem;
-    tlItem.mask = TVIF_TEXTPTR;
-    tlItem.hItem = hItem;
-    TreeList_GetItem(hWndList, &tlItem);
+    PPARTINFO PartInfo;
 
-    tlItem.pszText = tlItem.pszText; // <-- this is where text item is...
-/**
-** END TEST TEST!!
-**/
+#if 1 // TEMP DEBUG ONLY?
+    HTLITEM hParentItem = TreeList_GetParent(hWndList, ptlItem->hItem);
+    /* May or may not be a PPARTINFO: this is a PPARTINFO only when hParentItem != NULL */
+    // PartInfo = (PPARTINFO)TreeListGetItemData(hWndList, ptlItem->hItem);
+    PartInfo = (PPARTINFO)ptlItem->lParam;
     if (!hParentItem || !PartInfo)
         return;
+#else
+    PartInfo = GetItemPartition(hWndList, ptlItem->hItem);
+    if (!PartInfo)
+        return;
+#endif
 
     LocalFree(PartInfo);
 }
@@ -804,10 +864,10 @@ PrintDiskData(
     HANDLE hDevice;
     PCHAR DiskName = NULL;
     ULONG Length = 0;
-    PPARTENTRY PrimaryPartEntry, LogicalPartEntry;
-    PLIST_ENTRY PrimaryEntry, LogicalEntry;
+    PPARTENTRY PrimaryPartEntry;
+    PLIST_ENTRY PrimaryEntry;
     ULARGE_INTEGER DiskSize;
-    HTLITEM htiDisk, htiPart;
+    HTLITEM htiDisk;
     WCHAR LineBuffer[128];
     UCHAR outBuf[512];
 
@@ -945,7 +1005,6 @@ PrintDiskData(
     }
     TreeList_SetItemText(hWndList, htiDisk, 2, LineBuffer);
 
-
     /* Print partition lines */
     for (PrimaryEntry = DiskEntry->PrimaryPartListHead.Flink;
          PrimaryEntry != &DiskEntry->PrimaryPartListHead;
@@ -953,22 +1012,8 @@ PrintDiskData(
     {
         PrimaryPartEntry = CONTAINING_RECORD(PrimaryEntry, PARTENTRY, ListEntry);
 
-        htiPart = PrintPartitionData(hWndList, htiDisk, NULL, PrimaryPartEntry);
-
-        if (PrimaryPartEntry == DiskEntry->ExtendedPartition)
-        {
-            for (LogicalEntry = DiskEntry->LogicalPartListHead.Flink;
-                 LogicalEntry != &DiskEntry->LogicalPartListHead;
-                 LogicalEntry = LogicalEntry->Flink)
-            {
-                LogicalPartEntry = CONTAINING_RECORD(LogicalEntry, PARTENTRY, ListEntry);
-
-                PrintPartitionData(hWndList, htiPart, NULL, LogicalPartEntry);
-            }
-
-            /* Expand the extended partition node */
-            TreeList_Expand(hWndList, htiPart, TVE_EXPAND);
-        }
+        /* If this is an extended partition, recursively print the logical partitions */
+        PrintPartitionData(hWndList, htiDisk, NULL, PrimaryPartEntry);
     }
 
     /* Expand the disk node */
@@ -1037,19 +1082,12 @@ static VOID
 CleanupPartitionList(
     _In_ HWND hWndList)
 {
-    HTLITEM hItem;
     HIMAGELIST hSmall;
 
-    /* Cleanup any cached data -- the actual items
-     * will be automatically deleted by the TreeList */
-    // for (hItem = TVI_ROOT; hItem; hItem = TreeList_GetNextItem(...)) { }
-    hItem = TVI_ROOT;
-    while ((hItem = TreeList_GetNextItem(hWndList, hItem, TVGN_NEXTITEM)))
-    {
-        DeleteTreeItem(hWndList, hItem);
-        // TreeList_DeleteItem(hWndList, hItem);
-    }
-    // TreeList_DeleteAllItems(hWndList);
+    /* Cleanup all the items. Their cached data will be automatically deleted
+     * on response to the TVN_DELETEITEM notification sent by the TreeList
+     * by DeleteTreeItem() */
+    TreeList_DeleteAllItems(hWndList);
 
     /* And cleanup the imagelist */
     hSmall = TreeList_GetImageList(hWndList, TVSIL_NORMAL);
@@ -1157,10 +1195,9 @@ DriveDlgProc(
                     }
                     PartEntry = PartInfo->PartEntry;
 
-                    // PartCreateCtx.pSetupData = pSetupData;
-                    PartCreateCtx.PartitionList = pSetupData->PartitionList;
-                    PartCreateCtx.PartInfo = PartInfo;
-                    PartCreateCtx.MaxSize = 0;
+                    /* Make a copy of the info stored in the TreeList */
+                    PartCreateCtx.PartInfo = *PartInfo;
+                    PartCreateCtx.MaxSizeMB = 0;
 
                     ret = DialogBoxParamW(pSetupData->hInstance,
                                           MAKEINTRESOURCEW(IDD_PARTITION),
@@ -1168,11 +1205,47 @@ DriveDlgProc(
                                           PartitionDlgProc,
                                           (LPARAM)&PartCreateCtx);
 
-                    /* If we created a partition... */
+                    /* If we want to create a partition... */
                     if (ret == IDOK)
                     {
-                        HTLITEM hParentItem = TreeList_GetParent(hList, hItem);
-                        HTLITEM hPrevItem = TreeList_GetPrevSibling(hList, hItem);
+                        BOOLEAN Success;
+                        HTLITEM hParentItem;
+                        HTLITEM hInsertAfter;
+                        ULONGLONG PartSize;
+                        PPARTENTRY NextPart;
+
+                        /* Convert to bytes */
+                        PartSize = PartCreateCtx.PartSizeMB;
+                        PartSize *= MB;
+
+                        if (!PartCreateCtx.MBRExtPart)
+                        {
+                            Success = CreatePartition(pSetupData->PartitionList,
+                                                      PartEntry,
+                                                      PartSize);
+                        }
+                        else
+                        {
+                            Success = CreateExtendedPartition(pSetupData->PartitionList,
+                                                              PartEntry,
+                                                              PartSize);
+                        }
+
+                        if (!Success)
+                        {
+                            // FIXME: Just show an error? Respawn the creation dialog?
+                            MessageBoxW(GetParent(hwndDlg),
+                                        L"Failed to create a new partition.",
+                                        L"Create partition",
+                                        MB_OK | MB_ICONERROR);
+                            break;
+                        }
+
+                        /* Retrieve the parent item (disk or MBR extended partition) */
+                        hParentItem = TreeList_GetParent(hList, hItem);
+                        hInsertAfter = TreeList_GetPrevSibling(hList, hItem);
+                        if (!hInsertAfter)
+                            hInsertAfter = TVI_FIRST;
 
                         /*
                          * Current entry has been recreated and perhaps split
@@ -1182,15 +1255,23 @@ DriveDlgProc(
                          * NOTE: Since we create a partition we don't care
                          * about its previous PartInfo, so it can be deleted.
                          */
-                        DeleteTreeItem(hList, hItem);
-                        /**/TreeList_DeleteItem(hList, hItem);/**/
+
+                        /* Remove the current item */
+                        PartInfo = NULL;
+                        TreeList_DeleteItem(hList, hItem);
 
                         /* Recreate the entry */
-                        hItem = PrintPartitionData(hList, hParentItem, hPrevItem, PartEntry);
+                        hItem = PrintPartitionData(hList, hParentItem, hInsertAfter, PartEntry);
 
-                        // TODO: Add also the following unused space, if any
-                        // PartEntry = PartEntry->???;
-                        // PrintPartitionData(hList, hParentItem, hItem, PartEntry);
+                        /* Restore the previous PartInfo */
+                        PartInfo = GetItemPartition(hList, hItem);
+                        ASSERT(PartInfo);
+                        *PartInfo = PartCreateCtx.PartInfo;
+
+                        /* Add also the following unused space, if any */
+                        NextPart = GetAdjDiskRegion(NULL, PartEntry, ENUM_REGION_NEXT);
+                        if (NextPart && !NextPart->IsPartitioned)
+                            PrintPartitionData(hList, hParentItem, hItem, NextPart);
 
                         /* Give the focus on and select the created partition */
                         // TreeList_SetFocusItem(hList, 1, 1);
@@ -1237,24 +1318,85 @@ DriveDlgProc(
                                     L"Delete partition?",
                                     MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING) == IDYES)
                     {
-                        /* ... make it so! */
+                        PPARTENTRY PrevPart, NextPart;
+                        BOOLEAN PrevIsPartitioned, NextIsPartitioned;
+
+                        /*
+                         * Determine the nature of the previous and next disk regions,
+                         * in order to know what to do on the corresponding tree items
+                         * after the selected partition has been deleted.
+                         *
+                         * NOTE: Don't reference these pointers after DeletePartition(),
+                         * since these disk regions might have been coalesced/reallocated.
+                         * However we can check whether they were NULL or not.
+                         */
+                        PrevPart = GetAdjDiskRegion(NULL, PartEntry, ENUM_REGION_PREV);
+                        NextPart = GetAdjDiskRegion(NULL, PartEntry, ENUM_REGION_NEXT);
+
+                        PrevIsPartitioned = (PrevPart && PrevPart->IsPartitioned);
+                        NextIsPartitioned = (NextPart && NextPart->IsPartitioned);
+
+                        /* ... and make it so! */
+                        ASSERT(PartEntry->IsPartitioned); // The current partition must be partitioned.
                         if (DeletePartition(pSetupData->PartitionList,
                                             PartEntry,
-                                            NULL /*&PartEntry*/))
+                                            &PartEntry))
                         {
-                            // TODO: Just relist all the contents of the selected parent item,
-                            // in a sense (relist disk contents or the extended part contents).
+                            HTLITEM hParentItem;
+                            HTLITEM hInsertAfter;
+                            HTLITEM hAdjItem;
+                            PPARTINFO AdjPartInfo;
 
-                            // FIXME: This works, but the problem is that
-                            // we don't update the list with new unpartitioned
-                            // space. So for the time being, just "redraw"
-                            // the entire list by re-enumerating everything...
-                        #if 0
-                            LocalFree(PartInfo);
+                            /* Retrieve the parent item (disk or MBR extended partition) */
+                            hParentItem = TreeList_GetParent(hList, hItem);
+
+                            /* If previous sibling isn't partitioned, remove it */
+                            if (PrevPart && !PrevIsPartitioned)
+                            {
+                                hAdjItem = TreeList_GetPrevSibling(hList, hItem);
+                                ASSERT(hAdjItem); // TODO: Investigate
+                                if (hAdjItem)
+                                {
+                                    AdjPartInfo = GetItemPartition(hList, hAdjItem);
+                                    ASSERT(AdjPartInfo);
+                                    ASSERT(AdjPartInfo->PartEntry == PrevPart);
+                                    AdjPartInfo = NULL;
+                                    TreeList_DeleteItem(hList, hAdjItem);
+                                }
+                            }
+                            /* If next sibling isn't partitioned, remove it */
+                            if (NextPart && !NextIsPartitioned)
+                            {
+                                hAdjItem = TreeList_GetNextSibling(hList, hItem);
+                                ASSERT(hAdjItem); // TODO: Investigate
+                                if (hAdjItem)
+                                {
+                                    AdjPartInfo = GetItemPartition(hList, hAdjItem);
+                                    ASSERT(AdjPartInfo);
+                                    ASSERT(AdjPartInfo->PartEntry == NextPart);
+                                    AdjPartInfo = NULL;
+                                    TreeList_DeleteItem(hList, hAdjItem);
+                                }
+                            }
+
+                            /* We are going to insert the updated entry after
+                             * either, the original previous sibling (if it is
+                             * partitioned), or the second-previous sibling
+                             * (if the first one was already removed, see above) */
+                            hInsertAfter = TreeList_GetPrevSibling(hList, hItem);
+                            if (!hInsertAfter)
+                                hInsertAfter = TVI_FIRST;
+
+                            /* Remove the current item */
+                            PartInfo = NULL;
                             TreeList_DeleteItem(hList, hItem);
-                        #else
-                            DrawPartitionList(hList, pSetupData->PartitionList);
-                        #endif
+
+                            /* Add back the "new" unpartitioned space */
+                            hItem = PrintPartitionData(hList, hParentItem, hInsertAfter, PartEntry);
+
+                            /* Give the focus on and select the unpartitioned space */
+                            // TreeList_SetFocusItem(hList, 1, 1);
+                            TreeList_SelectItem(hList, hItem);
                         }
                     }
 
@@ -1321,8 +1463,7 @@ DriveDlgProc(
                             if (PartEntry->IsPartitioned &&
                                 // (PartEntry != PartEntry->DiskEntry->ExtendedPartition)
                                 !IsContainerPartition(PartEntry->PartitionType) /* alternatively: PartEntry->PartitionNumber != 0 */ &&
-                                // !PartEntry->New &&
-                                (PartEntry->Volume.FormatState == Formatted))
+                                ((PartEntry->Volume.FormatState == Formatted) || *PartInfo->FileSystemName))
                             {
                                 PropSheet_SetWizButtons(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                             }
@@ -1343,6 +1484,14 @@ DisableWizNext:
                     }
                 }
 
+                break;
+            }
+
+            if (lpnm->idFrom == IDC_PARTITION && lpnm->code == TVN_DELETEITEM)
+            {
+                /* Deleting an item from the partition list */
+                LPNMTREEVIEW pnmv = (LPNMTREEVIEW)lParam;
+                DeleteTreeItem(lpnm->hwndFrom, (TLITEMW*)&pnmv->itemOld);
                 break;
             }
 
@@ -1388,10 +1537,7 @@ DisableWizNext:
 
                 case PSN_WIZNEXT: /* Set the selected data */
                 {
-                    NTSTATUS Status;
-                    PPARTINFO PartInfo;
-
-                    PartInfo = GetSelectedPartition(GetDlgItem(hwndDlg, IDC_PARTITION), NULL);
+                    PPARTINFO PartInfo = GetSelectedPartition(GetDlgItem(hwndDlg, IDC_PARTITION), NULL);
                     if (!PartInfo)
                     {
                         /* Fail and don't continue the installation */
@@ -1400,19 +1546,7 @@ DisableWizNext:
                     }
 
                     InstallPartition = PartInfo->PartEntry;
-
-                    Status = InitDestinationPaths(&pSetupData->USetupData,
-                                                  NULL, // pSetupData->USetupData.InstallationDirectory,
-                                                  InstallPartition);
-                    if (!NT_SUCCESS(Status))
-                    {
-                        DisplayMessage(GetParent(hwndDlg), MB_ICONERROR, L"Error", L"InitDestinationPaths() failed with status 0x%08lx\n", Status);
-
-                        /* Fail and don't continue the installation */
-                        SetWindowLongPtrW(hwndDlg, DWLP_MSGRESULT, -1);
-                        return TRUE;
-                    }
-
+                    ASSERT(InstallPartition);
                     break;
                 }
 
