@@ -905,7 +905,7 @@ FormatPartition(
                      sizeof(PartEntry->Volume.FileSystem),
                      FileSystemName);
 
-    PartEntry->New = FALSE;
+    PartEntry->Volume.New = FALSE;
 
     return STATUS_SUCCESS;
 }
@@ -1047,7 +1047,7 @@ GetNextUnformattedPartition(
     while ((CurrentPart = GetAdjPartition(List, CurrentPart,
                                           ENUM_REGION_NEXT | ENUM_REGION_PARTITIONED)))
     {
-        if (CurrentPart->New /**/&& (CurrentPart->Volume.FormatState == Unformatted)/**/)
+        if (CurrentPart->Volume.New /**/&& (CurrentPart->Volume.FormatState == Unformatted)/**/)
         {
             /* Found a candidate, return it */
             return CurrentPart;

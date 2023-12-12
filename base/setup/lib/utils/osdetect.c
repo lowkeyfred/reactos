@@ -764,7 +764,7 @@ CreateNTOSInstallationsList(
         BOOLEAN CheckPartition =
             (PartEntry->IsPartitioned &&
              !IsContainerPartition(PartEntry->PartitionType) /* alternatively: PartEntry->PartitionNumber != 0 */ &&
-             !PartEntry->New &&
+             !PartEntry->New && !PartEntry->Volume.New &&
              (PartEntry->Volume.FormatState == Formatted));
 
         DPRINT("   -- Should I check it? %s\n", CheckPartition ? "YES!" : "NO!");

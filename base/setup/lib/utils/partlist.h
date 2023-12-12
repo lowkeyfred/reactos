@@ -54,8 +54,8 @@ typedef struct _VOLINFO
 
 /** The following properties may be replaced by flags **/
 
-    // /* Volume is new and has not been actually formatted yet */
-    // BOOLEAN New;
+    /* Volume is new and has not yet been actually formatted and mounted */
+    BOOLEAN New;
 
     /* Volume must be checked */
     BOOLEAN NeedsCheck;
