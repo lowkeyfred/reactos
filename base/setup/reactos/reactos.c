@@ -965,22 +965,37 @@ SummaryDlgProc(
 
                     if (InstallPartition->Volume.DriveLetter)
                     {
+#if 0
                         StringCchPrintfW(CurrentItemText, ARRAYSIZE(CurrentItemText),
                                          L"%c: \x2014 %wZ",
                                          InstallPartition->Volume.DriveLetter,
                                          &pSetupData->USetupData.DestinationRootPath);
+#else
+                        StringCchPrintfW(CurrentItemText, ARRAYSIZE(CurrentItemText),
+                                         L"%c: \x2014 Harddisk %lu, Partition %lu",
+                                         InstallPartition->Volume.DriveLetter,
+                                         InstallPartition->DiskEntry->DiskNumber,
+                                         InstallPartition->OnDiskPartitionNumber);
+#endif
                     }
                     else
                     {
+#if 0
                         StringCchPrintfW(CurrentItemText, ARRAYSIZE(CurrentItemText),
                                          L"%wZ",
                                          &pSetupData->USetupData.DestinationRootPath);
+#else
+                        StringCchPrintfW(CurrentItemText, ARRAYSIZE(CurrentItemText),
+                                         L"Harddisk %lu, Partition %lu",
+                                         InstallPartition->DiskEntry->DiskNumber,
+                                         InstallPartition->OnDiskPartitionNumber);
+#endif
                     }
                     SetDlgItemTextW(hwndDlg, IDC_DESTDRIVE, CurrentItemText);
 
                     SetDlgItemTextW(hwndDlg, IDC_PATH,
-                                    /*pSetupData->USetupData.InstallationDirectory*/
-                                    pSetupData->USetupData.InstallPath.Buffer);
+                                    pSetupData->USetupData.InstallationDirectory
+                                    /*pSetupData->USetupData.InstallPath.Buffer*/);
 
 
                     /* Change the "Next" button text to "Install" */
@@ -1131,6 +1146,7 @@ FsVolCallback(
     IN ULONG_PTR Param2)
 {
     PFSVOL_CONTEXT FsVolContext = (PFSVOL_CONTEXT)Context;
+    WCHAR Buffer[MAX_PATH];
 
     if ((FormatStatus == FSVOLNOTIFY_STARTQUEUE) ||
         (FormatStatus == FSVOLNOTIFY_ENDQUEUE))
@@ -1249,7 +1265,6 @@ FsVolCallback(
     if (FormatStatus == FSVOLNOTIFY_FORMATERROR)
     {
         PFORMAT_PARTITION_INFO PartInfo = (PFORMAT_PARTITION_INFO)Param1;
-        WCHAR Buffer[MAX_PATH];
 
         // FIXME: See also SystemPartitionError
         if (PartInfo->ErrorStatus == STATUS_PARTITION_FAILURE)
@@ -1267,6 +1282,9 @@ FsVolCallback(
         {
             /* FIXME: show an error dialog */
             // MUIDisplayError(ERROR_FORMATTING_PARTITION, Ir, POPUP_WAIT_ANY_KEY, PathBuffer);
+            DisplayMessage(NULL, MB_ICONERROR | MB_OK,
+                           L"Error",
+                           L"Unrecognized volume while attempting to format the partition.");
             // FsVolContext->NextPageOnAbort = QUIT_PAGE;
             return FSVOL_ABORT;
         }
@@ -1275,16 +1293,13 @@ FsVolCallback(
         {
             INT nRet;
 
-            StringCbPrintfW(Buffer,
-                            sizeof(Buffer),
-                            L"Setup is currently unable to format a partition in %s.\n"
-                            L"\n"
-                            L"  \x07  Press OK to continue Setup.\n"
-                            L"  \x07  Press Cancel to quit Setup.",
-                            PartInfo->FileSystemName);
-
             nRet = DisplayMessage(NULL, MB_ICONERROR | MB_OKCANCEL,
-                                  L"Error", Buffer);
+                                  L"Error",
+                                  L"Setup is currently unable to format a partition in %s.\n"
+                                  L"\n"
+                                  L"  \x07  Press OK to continue Setup.\n"
+                                  L"  \x07  Press Cancel to quit Setup.",
+                                  PartInfo->FileSystemName);
             if (nRet == IDCANCEL)
             {
                 // FsVolContext->NextPageOnAbort = QUIT_PAGE;
@@ -1297,13 +1312,19 @@ FsVolCallback(
         }
         else if (!NT_SUCCESS(PartInfo->ErrorStatus))
         {
-            WCHAR PathBuffer[MAX_PATH];
-
-            /** HACK!! **/
-            StringCchPrintfW(PathBuffer, ARRAYSIZE(PathBuffer),
-                             L"\\Device\\Harddisk%lu\\Partition%lu",
-                             PartInfo->PartEntry->DiskEntry->DiskNumber,
-                             PartInfo->PartEntry->PartitionNumber);
+            if (*PartInfo->PartEntry->Volume.DeviceName)
+            {
+                StringCchCopyW(Buffer, ARRAYSIZE(Buffer),
+                               PartInfo->PartEntry->Volume.DeviceName);
+            }
+            else
+            {
+                /** HACK!! **/
+                StringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
+                                 L"\\Device\\Harddisk%lu\\Partition%lu",
+                                 PartInfo->PartEntry->DiskEntry->DiskNumber,
+                                 PartInfo->PartEntry->PartitionNumber);
+            }
 
             DPRINT1("FormatPartition() failed with status 0x%08lx\n", PartInfo->ErrorStatus);
 
@@ -1311,7 +1332,7 @@ FsVolCallback(
             DisplayMessage(NULL, MB_ICONERROR | MB_OK,
                            L"Error",
                            L"Setup is unable to format the partition:\n %s\n",
-                           PathBuffer);
+                           Buffer);
             // FsVolContext->NextPageOnAbort = QUIT_PAGE;
             return FSVOL_ABORT;
         }
@@ -1322,7 +1343,6 @@ FsVolCallback(
     if (FormatStatus == FSVOLNOTIFY_CHECKERROR)
     {
         PCHECK_PARTITION_INFO PartInfo = (PCHECK_PARTITION_INFO)Param1;
-        WCHAR Buffer[MAX_PATH];
 
         if (PartInfo->ErrorStatus == STATUS_NOT_SUPPORTED)
         {
@@ -1334,16 +1354,13 @@ FsVolCallback(
              */
             PartInfo->PartEntry->Volume.NeedsCheck = FALSE;
 
-            StringCbPrintfW(Buffer,
-                            sizeof(Buffer),
-                            L"Setup is currently unable to check a partition formatted in %s.\n"
-                            L"\n"
-                            L"  \x07  Press ENTER to continue Setup.\n"
-                            L"  \x07  Press F3 to quit Setup.",
-                            PartInfo->PartEntry->Volume.FileSystem /* PartInfo->FileSystemName */);
-
             nRet = DisplayMessage(NULL, MB_ICONERROR | MB_OKCANCEL,
-                                  L"Error", Buffer);
+                                  L"Error",
+                                  L"Setup is currently unable to check a partition formatted in %s.\n"
+                                  L"\n"
+                                  L"  \x07  Press ENTER to continue Setup.\n"
+                                  L"  \x07  Press F3 to quit Setup.",
+                                  PartInfo->PartEntry->Volume.FileSystem /* PartInfo->FileSystemName */);
             if (nRet == IDCANCEL)
             {
                 // FsVolContext->NextPageOnAbort = QUIT_PAGE;
@@ -1358,13 +1375,10 @@ FsVolCallback(
         {
             DPRINT1("ChkdskPartition() failed with status 0x%08lx\n", PartInfo->ErrorStatus);
 
-            StringCbPrintfW(Buffer,
-                            sizeof(Buffer),
-                            L"ChkDsk detected some disk errors.\n(Status 0x%08lx).\n",
-                            PartInfo->ErrorStatus);
-
             DisplayMessage(NULL, MB_ICONERROR | MB_OK,
-                           L"Error", Buffer);
+                           L"Error",
+                           L"ChkDsk detected some disk errors.\n(Status 0x%08lx).\n",
+                           PartInfo->ErrorStatus);
             return FSVOL_SKIP;
         }
 
@@ -1376,6 +1390,7 @@ FsVolCallback(
     {
         PFORMAT_PARTITION_INFO FmtPartInfo = (PFORMAT_PARTITION_INFO)Param1;
         PPARTINFO PartInfo;
+        WCHAR PathBuffer[MAX_PATH];
 
         ASSERT(FmtPartInfo);
         ASSERT((FSVOL_OP)Param2 == FSVOL_FORMAT);
@@ -1392,8 +1407,35 @@ FsVolCallback(
         if (!*PartInfo->FileSystemName)
             return FSVOL_SKIP;
 
+        if (*PartInfo->PartEntry->Volume.DeviceName)
+        {
+            StringCchCopyW(PathBuffer, ARRAYSIZE(PathBuffer),
+                           PartInfo->PartEntry->Volume.DeviceName);
+        }
+        else
+        {
+            /** HACK!! **/
+            StringCchPrintfW(PathBuffer, ARRAYSIZE(PathBuffer),
+                             L"\\Device\\Harddisk%lu\\Partition%lu",
+                             PartInfo->PartEntry->DiskEntry->DiskNumber,
+                             PartInfo->PartEntry->PartitionNumber);
+        }
+
         /* Set status text */
-        SetDlgItemTextW(UiContext.hwndDlg, IDC_ITEM, L"Formatting volume XXX...");
+        if (PartInfo->PartEntry->Volume.DriveLetter)
+        {
+            StringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
+                             L"Formatting volume %c: (%s) in %s...",
+                             PartInfo->PartEntry->Volume.DriveLetter,
+                             PathBuffer, PartInfo->FileSystemName);
+        }
+        else
+        {
+            StringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
+                             L"Formatting volume %s in %s...",
+                             PathBuffer, PartInfo->FileSystemName);
+        }
+        SetDlgItemTextW(UiContext.hwndDlg, IDC_ITEM, Buffer);
 
         // StartFormat(FmtPartInfo, FileSystemList->Selected);
         FmtPartInfo->FileSystemName = PartInfo->FileSystemName;
@@ -1427,6 +1469,7 @@ FsVolCallback(
     {
         PCHECK_PARTITION_INFO ChkPartInfo = (PCHECK_PARTITION_INFO)Param1;
         PPARTINFO PartInfo;
+        WCHAR PathBuffer[MAX_PATH];
 
         ASSERT(ChkPartInfo);
         ASSERT((FSVOL_OP)Param2 == FSVOL_CHECK);
@@ -1439,8 +1482,35 @@ FsVolCallback(
             return FSVOL_SKIP;
         ASSERT(PartInfo->PartEntry == ChkPartInfo->PartEntry);
 
+        if (*PartInfo->PartEntry->Volume.DeviceName)
+        {
+            StringCchCopyW(PathBuffer, ARRAYSIZE(PathBuffer),
+                           PartInfo->PartEntry->Volume.DeviceName);
+        }
+        else
+        {
+            /** HACK!! **/
+            StringCchPrintfW(PathBuffer, ARRAYSIZE(PathBuffer),
+                             L"\\Device\\Harddisk%lu\\Partition%lu",
+                             PartInfo->PartEntry->DiskEntry->DiskNumber,
+                             PartInfo->PartEntry->PartitionNumber);
+        }
+
         /* Set status text */
-        SetDlgItemTextW(UiContext.hwndDlg, IDC_ITEM, L"Checking volume XXX...");
+        if (PartInfo->PartEntry->Volume.DriveLetter)
+        {
+            StringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
+                             L"Checking volume %c: (%s)...",
+                             PartInfo->PartEntry->Volume.DriveLetter,
+                             PathBuffer);
+        }
+        else
+        {
+            StringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
+                             L"Checking volume %s...",
+                             PathBuffer);
+        }
+        SetDlgItemTextW(UiContext.hwndDlg, IDC_ITEM, Buffer);
 
         // StartCheck(ChkPartInfo);
         // TODO: Think about which values could be defaulted...
@@ -1499,6 +1569,7 @@ FileCopyCallback(PVOID Context,
             CopyContext->TotalOperations = (ULONG)Param2;
             CopyContext->CompletedOperations = 0;
 
+            /* Set up the progress bar */
             SendMessageW(UiContext.hWndProgress,
                          PBM_SETRANGE, 0,
                          MAKELPARAM(0, CopyContext->TotalOperations));
@@ -1581,38 +1652,47 @@ FileCopyCallback(PVOID Context,
     return FILEOP_DOIT;
 }
 
-#if 0
 static VOID
 __cdecl
 RegistryStatus(IN REGISTRY_STATUS RegStatus, ...)
 {
     /* WARNING: Please keep this lookup table in sync with the resources! */
-    static const UINT StringIDs[] =
+    static const PCWSTR /*UINT*/ StringIDs[] =
     {
-        STRING_DONE,                    /* Success */
-        STRING_REGHIVEUPDATE,           /* RegHiveUpdate */
-        STRING_IMPORTFILE,              /* ImportRegHive */
-        STRING_DISPLAYSETTINGSUPDATE,   /* DisplaySettingsUpdate */
-        STRING_LOCALESETTINGSUPDATE,    /* LocaleSettingsUpdate */
-        STRING_ADDKBLAYOUTS,            /* KeybLayouts */
-        STRING_KEYBOARDSETTINGSUPDATE,  /* KeybSettingsUpdate */
-        STRING_CODEPAGEINFOUPDATE,      /* CodePageInfoUpdate */
+        L"Done",                                    // STRING_DONE,                    /* Success */
+        L"Updating registry hives",                 // STRING_REGHIVEUPDATE,           /* RegHiveUpdate */
+        L"Importing %s",                            // STRING_IMPORTFILE,              /* ImportRegHive */
+        L"Updating display registry settings",      // STRING_DISPLAYSETTINGSUPDATE,   /* DisplaySettingsUpdate */
+        L"Updating locale settings",                // STRING_LOCALESETTINGSUPDATE,    /* LocaleSettingsUpdate */
+        L"Adding keyboard layouts",                 // STRING_ADDKBLAYOUTS,            /* KeybLayouts */
+        L"Updating keyboard layout settings",       // STRING_KEYBOARDSETTINGSUPDATE,  /* KeybSettingsUpdate */
+        L"Adding codepage information to registry", // STRING_CODEPAGEINFOUPDATE,      /* CodePageInfoUpdate */
     };
 
     va_list args;
+    WCHAR Buffer[MAX_PATH];
 
     if (RegStatus < ARRAYSIZE(StringIDs))
     {
         va_start(args, RegStatus);
-        CONSOLE_SetStatusTextV(MUIGetString(StringIDs[RegStatus]), args);
+
+        StringCchVPrintfW(Buffer, ARRAYSIZE(Buffer),
+                          StringIDs[RegStatus], args);
+        // SetDlgItemTextW(UiContext.hwndDlg, IDC_ITEM, Buffer);
+        SetWindowTextW(UiContext.hWndItem, Buffer);
+
         va_end(args);
     }
     else
     {
-        CONSOLE_SetStatusText("Unknown status %d", RegStatus);
+        StringCchPrintfW(Buffer, ARRAYSIZE(Buffer),
+                         L"Unknown status %d", RegStatus);
+        // SetDlgItemTextW(UiContext.hwndDlg, IDC_ITEM, Buffer);
+        SetWindowTextW(UiContext.hWndItem, Buffer);
     }
+
+    SendMessageW(UiContext.hWndProgress, PBM_STEPIT, 0, 0);
 }
-#endif
 
 /**
  * @brief
@@ -1642,8 +1722,10 @@ PrepareAndDoCopyThread(
     LONG_PTR dwStyle;
     ERROR_NUMBER ErrorNumber;
     BOOLEAN Success;
+    NTSTATUS Status;
     FSVOL_CONTEXT FsVolContext;
     COPYCONTEXT CopyContext;
+    WCHAR PathBuffer[MAX_PATH];
 
     /* Retrieve pointer to the global setup data */
     pSetupData = (PSETUPDATA)GetWindowLongPtrW(hwndDlg, GWLP_USERDATA);
@@ -1735,6 +1817,26 @@ PrepareAndDoCopyThread(
     PropSheet_SetCloseCancel(GetParent(hwndDlg), TRUE);
 
 
+
+    /* Re-calculate the final destination paths */
+    ASSERT(InstallPartition);
+    Status = InitDestinationPaths(&pSetupData->USetupData,
+                                  NULL, // pSetupData->USetupData.InstallationDirectory,
+                                  InstallPartition);
+    if (!NT_SUCCESS(Status))
+    {
+        DisplayMessage(GetParent(hwndDlg), MB_ICONERROR, L"Error", L"InitDestinationPaths() failed with status 0x%08lx\n", Status);
+
+        /*
+         * We failed due to an unexpected error, keep on the copy page to view the current state,
+         * but enable the "Next" button to allow the user to continue to the terminate page.
+         */
+        PropSheet_SetWizButtons(GetParent(hwndDlg), PSWIZB_NEXT);
+        return 1;
+    }
+
+
+
     /*
      * Preparation of the list of files to be copied
      */
@@ -1802,9 +1904,9 @@ PrepareAndDoCopyThread(
         return 1;
     }
 
-    /* Set status text */
-    SetDlgItemTextW(hwndDlg, IDC_ACTIVITY, L"Finalizing the installation...");
-    SetDlgItemTextW(hwndDlg, IDC_ITEM, L"");
+    // /* Set status text */
+    // SetDlgItemTextW(hwndDlg, IDC_ACTIVITY, L"Finalizing the installation...");
+    // SetDlgItemTextW(hwndDlg, IDC_ITEM, L"");
 
     /* Create the $winnt$.inf file */
     InstallSetupInfFile(&pSetupData->USetupData);
@@ -1821,14 +1923,125 @@ PrepareAndDoCopyThread(
                         : L"Creating the registry...");
     SetDlgItemTextW(hwndDlg, IDC_ITEM, L"");
 
+    /* Set up the progress bar */
+    SendMessageW(hWndProgress,
+                 PBM_SETRANGE, 0,
+                 MAKELPARAM(0, 8)); // FIXME: hardcoded number of steps, see StringIDs[] array in RegistryStatus()
+    SendMessageW(hWndProgress,
+                 PBM_SETSTEP, 1, 0);
+
     ErrorNumber = UpdateRegistry(&pSetupData->USetupData,
                                  pSetupData->RepairUpdateFlag,
                                  pSetupData->PartitionList,
                                  InstallPartition->Volume.DriveLetter,
                                  pSetupData->SelectedLanguageId,
-                                 NULL, //RegistryStatus
+                                 RegistryStatus,
                                  NULL /* SubstSettings */);
     UNREFERENCED_PARAMETER(ErrorNumber);
+    SendMessageW(UiContext.hWndProgress, PBM_SETPOS, 100, 0);
+
+    /*
+     * And finally, install the bootloader!
+     */
+
+    /* Set status text */
+    SetDlgItemTextW(hwndDlg, IDC_ACTIVITY, L"Installing the bootloader...");
+    SetDlgItemTextW(hwndDlg, IDC_ITEM, L"");
+
+    RtlFreeUnicodeString(&pSetupData->USetupData.SystemRootPath);
+    StringCchPrintfW(PathBuffer, ARRAYSIZE(PathBuffer),
+         L"\\Device\\Harddisk%lu\\Partition%lu\\",
+         SystemPartition->DiskEntry->DiskNumber,
+         SystemPartition->PartitionNumber);
+    RtlCreateUnicodeString(&pSetupData->USetupData.SystemRootPath, PathBuffer);
+    DPRINT1("SystemRootPath: %wZ\n", &pSetupData->USetupData.SystemRootPath);
+
+    switch (pSetupData->USetupData.BootLoaderLocation)
+    {
+        /* Skip installation */
+        case 0:
+            break;
+
+#if 0 // FIXME: TODO
+        /* Install on removable disk */
+        case 1:
+            (void)BootLoaderRemovableDiskPage(Ir);
+            break;
+#endif
+
+        /* Install on hard-disk (both MBR and VBR, or VBR only) */
+        case 2:
+        case 3:
+        {
+            // (void)BootLoaderHardDiskPage(Ir);
+
+            NTSTATUS Status;
+            WCHAR DestinationDevicePathBuffer[MAX_PATH];
+
+            if (pSetupData->USetupData.BootLoaderLocation == 2)
+            {
+                /* Step 1: Write the VBR */
+                Status = InstallVBRToPartition(&pSetupData->USetupData.SystemRootPath,
+                                               &pSetupData->USetupData.SourceRootPath,
+                                               &pSetupData->USetupData.DestinationArcPath,
+                                               SystemPartition->Volume.FileSystem);
+                if (!NT_SUCCESS(Status))
+                {
+                    // ERROR_WRITE_BOOT
+                    DisplayMessage(NULL, MB_ICONERROR | MB_OK,
+                                   L"Error",
+                                   L"Setup failed to install %s bootcode on the system partition.",
+                                   SystemPartition->Volume.FileSystem);
+                    // return FALSE;
+                    break;
+                }
+
+                /* Step 2: Write the MBR if the disk containing the system partition is not a super-floppy */
+                if (!IsSuperFloppy(SystemPartition->DiskEntry))
+                {
+                    StringCchPrintfW(DestinationDevicePathBuffer, ARRAYSIZE(DestinationDevicePathBuffer),
+                                     L"\\Device\\Harddisk%d\\Partition0",
+                                     SystemPartition->DiskEntry->DiskNumber);
+                    Status = InstallMbrBootCodeToDisk(&pSetupData->USetupData.SystemRootPath,
+                                                      &pSetupData->USetupData.SourceRootPath,
+                                                      DestinationDevicePathBuffer);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("InstallMbrBootCodeToDisk() failed (Status %lx)\n", Status);
+                        // ERROR_INSTALL_BOOTCODE
+                        DisplayMessage(NULL, MB_ICONERROR | MB_OK,
+                                       L"Error",
+                                       L"Setup failed to install the %s bootcode on the system partition.",
+                                       L"MBR");
+                        // return FALSE;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                Status = InstallVBRToPartition(&pSetupData->USetupData.SystemRootPath,
+                                               &pSetupData->USetupData.SourceRootPath,
+                                               &pSetupData->USetupData.DestinationArcPath,
+                                               SystemPartition->Volume.FileSystem);
+                if (!NT_SUCCESS(Status))
+                {
+                    // ERROR_WRITE_BOOT
+                    DisplayMessage(NULL, MB_ICONERROR | MB_OK,
+                                   L"Error",
+                                   L"Setup failed to install %s bootcode on the system partition.",
+                                   SystemPartition->Volume.FileSystem);
+                    return FALSE;
+                }
+            }
+
+            // return TRUE;
+            break;
+        }
+
+        default:
+            break;
+    }
 
 
     /* We are done! Switch to the Terminate page */
