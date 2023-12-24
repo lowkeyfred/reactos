@@ -1940,6 +1940,8 @@ PrepareAndDoCopyThread(
                  MAKELPARAM(0, 8)); // FIXME: hardcoded number of steps, see StringIDs[] array in RegistryStatus()
     SendMessageW(hWndProgress,
                  PBM_SETSTEP, 1, 0);
+    SendMessageW(hWndProgress,
+                 PBM_SETPOS, 0, 0);
 
     ErrorNumber = UpdateRegistry(&pSetupData->USetupData,
                                  pSetupData->RepairUpdateFlag,
