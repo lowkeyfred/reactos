@@ -1634,6 +1634,15 @@ FileCopyCallback(PVOID Context,
             break;
         }
 
+        case SPFILENOTIFY_COPYERROR:
+        {
+            FilePathInfo = (PFILEPATHS_W)Param1;
+
+            DPRINT1("An error happened while trying to copy file '%S' (error 0x%08lx), skipping it...\n",
+                    FilePathInfo->Target, FilePathInfo->Win32Error);
+            return FILEOP_SKIP;
+        }
+
         case SPFILENOTIFY_ENDDELETE:
         case SPFILENOTIFY_ENDRENAME:
         case SPFILENOTIFY_ENDCOPY:
