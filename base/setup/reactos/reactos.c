@@ -1943,6 +1943,8 @@ PrepareAndDoCopyThread(
     SendMessageW(hWndProgress,
                  PBM_SETPOS, 0, 0);
 
+__debugbreak();
+
     ErrorNumber = UpdateRegistry(&pSetupData->USetupData,
                                  pSetupData->RepairUpdateFlag,
                                  pSetupData->PartitionList,
