@@ -1575,6 +1575,8 @@ FileCopyCallback(PVOID Context,
                          MAKELPARAM(0, CopyContext->TotalOperations));
             SendMessageW(UiContext.hWndProgress,
                          PBM_SETSTEP, 1, 0);
+            SendMessageW(UiContext.hWndProgress,
+                         PBM_SETPOS, 0, 0);
             break;
         }
 
