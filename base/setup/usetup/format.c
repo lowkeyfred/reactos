@@ -39,19 +39,16 @@ static
 BOOLEAN
 NTAPI
 FormatCallback(
-    IN CALLBACKCOMMAND Command,
-    IN ULONG Modifier,
-    IN PVOID Argument)
+    _In_ CALLBACKCOMMAND Command,
+    _In_ ULONG Modifier,
+    _In_ PVOID Argument)
 {
     switch (Command)
     {
         case PROGRESS:
         {
-            PULONG Percent;
-
-            Percent = (PULONG)Argument;
+            PULONG Percent = (PULONG)Argument;
             DPRINT("%lu percent completed\n", *Percent);
-
             ProgressSetStep(FormatProgressBar, *Percent);
             break;
         }
@@ -59,8 +56,7 @@ FormatCallback(
 #if 0
         case OUTPUT:
         {
-            PTEXTOUTPUT Output;
-            output = (PTEXTOUTPUT) Argument;
+            PTEXTOUTPUT output = (PTEXTOUTPUT)Argument;
             DPRINT("%s\n", output->Output);
             break;
         }
@@ -68,15 +64,14 @@ FormatCallback(
 
         case DONE:
         {
-            // PBOOLEAN Success;
-            DPRINT("Done\n");
 #if 0
-            Success = (PBOOLEAN)Argument;
+            PBOOLEAN Success = (PBOOLEAN)Argument;
             if (*Success == FALSE)
             {
                 DPRINT("FormatEx was unable to complete successfully.\n\n");
             }
 #endif
+            DPRINT("Done\n");
             break;
         }
 
@@ -88,13 +83,20 @@ FormatCallback(
     return TRUE;
 }
 
-NTSTATUS
-DoFormat(
-    IN PPARTENTRY PartEntry,
-    IN PCWSTR FileSystemName,
-    IN BOOLEAN QuickFormat)
+VOID
+StartFormat(
+    _Inout_ PFORMAT_PARTITION_INFO PartInfo,
+    _In_ PFILE_SYSTEM_ITEM SelectedFileSystem)
 {
-    NTSTATUS Status;
+    ASSERT(SelectedFileSystem && SelectedFileSystem->FileSystem);
+
+    // TODO: Think about which values could be defaulted...
+    PartInfo->FileSystemName = SelectedFileSystem->FileSystem;
+    PartInfo->MediaFlag = FMIFS_HARDDISK;
+    PartInfo->Label = NULL;
+    PartInfo->QuickFormat = SelectedFileSystem->QuickFormat;
+    PartInfo->ClusterSize = 0;
+    PartInfo->Callback = FormatCallback;
 
     FormatProgressBar = CreateProgressBar(6,
                                           yScreen - 14,
@@ -106,22 +108,16 @@ DoFormat(
                                           MUIGetString(STRING_FORMATTINGPART));
 
     ProgressSetStepCount(FormatProgressBar, 100);
+}
 
-    // TODO: Think about which values could be defaulted...
-    Status = FormatPartition(PartEntry,
-                             FileSystemName,
-                             FMIFS_HARDDISK,  /* MediaFlag */
-                             NULL,            /* Label */
-                             QuickFormat,     /* QuickFormat */
-                             0,               /* ClusterSize */
-                             FormatCallback); /* Callback */
-
+VOID
+EndFormat(
+    _In_ NTSTATUS Status)
+{
     DestroyProgressBar(FormatProgressBar);
     FormatProgressBar = NULL;
 
     DPRINT("FormatPartition() finished with status 0x%08lx\n", Status);
-
-    return Status;
 }
 
 /* EOF */

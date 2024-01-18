@@ -12,6 +12,9 @@
 
 // NOTE: They should be moved into some global header.
 
+// /* We have to define it there, because it is not in the MS DDK */
+// #define PARTITION_LINUX 0x83
+
 /* OEM MBR partition types recognized by NT (see [MS-DMRP] Appendix B) */
 #define PARTITION_EISA          0x12    // EISA partition
 #define PARTITION_HIBERNATION   0x84    // Hibernation partition for laptops
@@ -34,9 +37,30 @@ typedef enum _FORMATSTATE
     Unformatted,
     UnformattedOrDamaged,
     UnknownFormat,
-    Preformatted,
     Formatted
 } FORMATSTATE, *PFORMATSTATE;
+
+typedef struct _VOLINFO
+{
+    // LIST_ENTRY ListEntry;
+
+    // WCHAR VolumeName[MAX_PATH]; // Name in the DOS/Win32 namespace
+    WCHAR DeviceName[MAX_PATH]; // NT device name
+
+    WCHAR DriveLetter;
+    WCHAR VolumeLabel[20];
+    WCHAR FileSystem[MAX_PATH+1];
+    FORMATSTATE FormatState;
+
+/** The following properties may be replaced by flags **/
+
+    /* Volume is new and has not yet been actually formatted and mounted */
+    BOOLEAN New;
+
+    /* Volume must be checked */
+    BOOLEAN NeedsCheck;
+
+} VOLINFO, *PVOLINFO;
 
 typedef struct _PARTENTRY
 {
@@ -55,11 +79,6 @@ typedef struct _PARTENTRY
     ULONG PartitionNumber;       /* Current partition number, only valid for the currently running NTOS instance */
     ULONG PartitionIndex;        /* Index in the LayoutBuffer->PartitionEntry[] cached array of the corresponding DiskEntry */
 
-    WCHAR DriveLetter;
-    WCHAR VolumeLabel[20];
-    WCHAR FileSystem[MAX_PATH+1];
-    FORMATSTATE FormatState;
-
     BOOLEAN LogicalPartition;
 
     /* Partition is partitioned disk space */
@@ -71,10 +90,10 @@ typedef struct _PARTENTRY
     BOOLEAN New;
 
     /* Partition was created automatically */
-    BOOLEAN AutoCreate;
+    BOOLEAN AutoCreate; // FIXME: This is a HACK only for Setup!
 
-    /* Partition must be checked */
-    BOOLEAN NeedsCheck;
+    /* Volume-related properties */
+    VOLINFO Volume; // FIXME: Do it differently later
 
 } PARTENTRY, *PPARTENTRY;
 
@@ -111,8 +130,9 @@ typedef struct _DISKENTRY
     ULONG DiskNumber;
 //  SCSI_ADDRESS;
     USHORT Port;
-    USHORT Bus;
-    USHORT Id;
+    USHORT Bus;  // PathId;
+    USHORT Id;   // TargetId;
+    // USHORT Lun;
 
     /* Has the partition list been modified? */
     BOOLEAN Dirty;
@@ -227,6 +247,44 @@ RoundingDivide(
    IN ULONGLONG Divisor);
 
 
+#define GetPartEntryOffsetInBytes(PartEntry) \
+    ((PartEntry)->StartSector.QuadPart * (PartEntry)->DiskEntry->BytesPerSector)
+
+#define GetPartEntrySizeInBytes(PartEntry) \
+    ((PartEntry)->SectorCount.QuadPart * (PartEntry)->DiskEntry->BytesPerSector)
+
+#define GetDiskSizeInBytes(DiskEntry) \
+    ((DiskEntry)->SectorCount.QuadPart * (DiskEntry)->BytesPerSector)
+
+
+#define ENUM_REGION_NEXT                0x00 //< Enumerate the next region (default)
+#define ENUM_REGION_PREV                0x01 //< Enumerate the previous region
+#define ENUM_REGION_PARTITIONED         0x02 //< Enumerate only partitioned regions (otherwise, enumerate all regions, including free space)
+// 0x04, 0x08 reserved
+#define ENUM_REGION_MBR_PRIMARY_ONLY    0x10 //< MBR disks only: Enumerate only primary regions
+#define ENUM_REGION_MBR_LOGICAL_ONLY    0x20 //< MBR disks only: Enumerate only logical regions
+#define ENUM_REGION_MBR_BY_ORDER        0x40 //< MBR disks only: Enumerate by order on disk (may traverse extended partitions to enumerate the logical ones in-between), instead of by type (first all primary, then all logical)
+/*
+they are listed in actual
+order of appearance on a given disk. For example for MBR disks, all
+_primary_ partitions are enumerated first, before _logical_ partitions.
+*/
+// 0x80 reserved
+
+PPARTENTRY
+GetAdjDiskRegion(
+    _In_opt_ PDISKENTRY CurrentDisk,
+    _In_opt_ PPARTENTRY CurrentPart,
+    _In_ ULONG EnumFlags);
+
+PPARTENTRY
+GetAdjPartition(
+    _In_ PPARTLIST List,
+    _In_opt_ PPARTENTRY CurrentPart,
+    _In_ ULONG EnumFlags);
+
+
+
 BOOLEAN
 IsSuperFloppy(
     IN PDISKENTRY DiskEntry);
@@ -244,31 +302,31 @@ DestroyPartitionList(
 
 PDISKENTRY
 GetDiskByBiosNumber(
-    IN PPARTLIST List,
-    IN ULONG HwDiskNumber);
+    _In_ PPARTLIST List,
+    _In_ ULONG HwDiskNumber);
 
 PDISKENTRY
 GetDiskByNumber(
-    IN PPARTLIST List,
-    IN ULONG DiskNumber);
+    _In_ PPARTLIST List,
+    _In_ ULONG DiskNumber);
 
 PDISKENTRY
 GetDiskBySCSI(
-    IN PPARTLIST List,
-    IN USHORT Port,
-    IN USHORT Bus,
-    IN USHORT Id);
+    _In_ PPARTLIST List,
+    _In_ USHORT Port,
+    _In_ USHORT Bus,
+    _In_ USHORT Id);
 
 PDISKENTRY
 GetDiskBySignature(
-    IN PPARTLIST List,
-    IN ULONG Signature);
+    _In_ PPARTLIST List,
+    _In_ ULONG Signature);
 
 PPARTENTRY
 GetPartition(
-    // IN PPARTLIST List,
-    IN PDISKENTRY DiskEntry,
-    IN ULONG PartitionNumber);
+    // _In_ PPARTLIST List,
+    _In_ PDISKENTRY DiskEntry,
+    _In_ ULONG PartitionNumber);
 
 BOOLEAN
 GetDiskOrPartition(
@@ -284,16 +342,6 @@ SelectPartition(
     IN ULONG DiskNumber,
     IN ULONG PartitionNumber);
 
-PPARTENTRY
-GetNextPartition(
-    IN PPARTLIST List,
-    IN PPARTENTRY CurrentPart OPTIONAL);
-
-PPARTENTRY
-GetPrevPartition(
-    IN PPARTLIST List,
-    IN PPARTENTRY CurrentPart OPTIONAL);
-
 ERROR_NUMBER
 PartitionCreationChecks(
     _In_ PPARTENTRY PartEntry);
@@ -306,18 +354,22 @@ BOOLEAN
 CreatePartition(
     _In_ PPARTLIST List,
     _Inout_ PPARTENTRY PartEntry,
-    _In_ ULONGLONG SectorCount,
-    _In_ BOOLEAN AutoCreate);
+    _In_opt_ ULONGLONG SizeBytes);
 
 BOOLEAN
 CreateExtendedPartition(
     _In_ PPARTLIST List,
     _Inout_ PPARTENTRY PartEntry,
-    _In_ ULONGLONG SectorCount);
+    _In_opt_ ULONGLONG SizeBytes);
+
+NTSTATUS
+MountVolume(
+    _Inout_ PVOLINFO VolumeEntry,
+    _In_opt_ UCHAR MbrPartitionType);
 
 NTSTATUS
 DismountVolume(
-    IN PPARTENTRY PartEntry);
+    _In_ PVOLINFO VolumeEntry);
 
 BOOLEAN
 DeletePartition(
@@ -360,17 +412,5 @@ VOID
 SetMBRPartitionType(
     IN PPARTENTRY PartEntry,
     IN UCHAR PartitionType);
-
-BOOLEAN
-GetNextUnformattedPartition(
-    IN PPARTLIST List,
-    OUT PDISKENTRY *pDiskEntry OPTIONAL,
-    OUT PPARTENTRY *pPartEntry);
-
-BOOLEAN
-GetNextUncheckedPartition(
-    IN PPARTLIST List,
-    OUT PDISKENTRY *pDiskEntry OPTIONAL,
-    OUT PPARTENTRY *pPartEntry);
 
 /* EOF */
