@@ -179,10 +179,7 @@ CheckUnattendedSetup(
     {
         if (INF_GetData(&Context, NULL, &Value))
         {
-            LONG Id = wcstol(Value, NULL, 16);
-            RtlStringCchPrintfW(pSetupData->LocaleID,
-                                ARRAYSIZE(pSetupData->LocaleID),
-                                L"%08lx", Id);
+            pSetupData->LocaleID = (LCID)wcstoul(Value, NULL, 16);
             INF_FreeData(Value);
         }
     }
@@ -1008,7 +1005,7 @@ UpdateRegistry(
     /**/IN BOOLEAN RepairUpdateFlag,     /* HACK HACK! */
     /**/IN PPARTLIST PartitionList,      /* HACK HACK! */
     /**/IN WCHAR DestinationDriveLetter, /* HACK HACK! */
-    /**/IN PCWSTR SelectedLanguageId,    /* HACK HACK! */
+    /**/IN LANGID SelectedLanguageId,    /* HACK HACK! */
     IN PREGISTRY_STATUS_ROUTINE StatusRoutine OPTIONAL,
     IN PFONTSUBSTSETTINGS SubstSettings OPTIONAL)
 {
@@ -1021,6 +1018,8 @@ UpdateRegistry(
     BOOLEAN Success;
     BOOLEAN ShouldRepairRegistry = FALSE;
     BOOLEAN Delete;
+
+__debugbreak();
 
     if (RepairUpdateFlag)
     {
@@ -1210,7 +1209,7 @@ DoUpdate:
     if (SubstSettings)
     {
         /* HACK */
-        DoRegistryFontFixup(SubstSettings, wcstoul(SelectedLanguageId, NULL, 16));
+        DoRegistryFontFixup(SubstSettings, SelectedLanguageId);
     }
 #endif
 

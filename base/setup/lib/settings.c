@@ -393,8 +393,8 @@ AddEntriesFromInfSection(
         }
         else if (RetVal == 1)
         {
-            AppendGenericListEntry(List, UserData, Current);
-            ++TotalCount;
+            if (AppendGenericListEntry(List, UserData, Current))
+                ++TotalCount;
         }
         // else if (RetVal == 2), skip the entry.
 
@@ -413,7 +413,6 @@ DefaultProcessEntry(
     IN PVOID Parameter OPTIONAL)
 {
     PWSTR CompareKey = (PWSTR)Parameter;
-
     PGENENTRY GenEntry;
     SIZE_T IdSize, ValueSize;
 
@@ -422,16 +421,16 @@ DefaultProcessEntry(
 
     GenEntry = RtlAllocateHeap(ProcessHeap, 0,
                                sizeof(*GenEntry) + IdSize + ValueSize);
-    if (GenEntry == NULL)
+    if (!GenEntry)
     {
         /* Failure, stop enumeration */
         DPRINT1("RtlAllocateHeap() failed\n");
         return 0;
     }
 
-    GenEntry->Id    = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry));
-    GenEntry->Value = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry) + IdSize);
-    RtlStringCbCopyW((PWSTR)GenEntry->Id, IdSize, KeyName);
+    GenEntry->Id.Str = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry));
+    GenEntry->Value  = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry) + IdSize);
+    RtlStringCbCopyW((PWSTR)GenEntry->Id.Str, IdSize, KeyName);
     RtlStringCbCopyW((PWSTR)GenEntry->Value, ValueSize, KeyValue);
 
     *UserData = GenEntry;
@@ -799,7 +798,7 @@ ProcessComputerFiles(
         return FALSE;
 
     RtlStringCchPrintfW(SectionName, ARRAYSIZE(SectionName),
-                        L"Files.%s", ((PGENENTRY)GetListEntryData(Entry))->Id);
+                        L"Files.%s", ((PGENENTRY)GetListEntryData(Entry))->Id.Str);
     *AdditionalSectionName = SectionName;
 
     return TRUE;
@@ -829,7 +828,7 @@ ProcessDisplayRegistry(
         return FALSE;
 
     if (!SpInfFindFirstLine(InfFile, L"Display",
-                            ((PGENENTRY)GetListEntryData(Entry))->Id,
+                            ((PGENENTRY)GetListEntryData(Entry))->Id.Str,
                             &Context))
     {
         DPRINT1("SpInfFindFirstLine() failed\n");
@@ -935,7 +934,7 @@ ProcessDisplayRegistry(
         return FALSE;
     }
 
-    Height = wcstoul(Buffer, 0, 0);
+    Height = wcstoul(Buffer, NULL, 0);
     Status = RtlWriteRegistryValue(RTL_REGISTRY_HANDLE, KeyHandle,
                                    L"DefaultSettings.YResolution",
                                    REG_DWORD,
@@ -955,7 +954,7 @@ ProcessDisplayRegistry(
         return FALSE;
     }
 
-    Bpp = wcstoul(Buffer, 0, 0);
+    Bpp = wcstoul(Buffer, NULL, 0);
     Status = RtlWriteRegistryValue(RTL_REGISTRY_HANDLE, KeyHandle,
                                    L"DefaultSettings.BitsPerPel",
                                    REG_DWORD,
@@ -980,23 +979,26 @@ ProcessLocaleRegistry(
     IN PGENERIC_LIST List)
 {
     PGENERIC_LIST_ENTRY Entry;
-    PCWSTR LanguageId;
+    LCID LocaleId;
     OBJECT_ATTRIBUTES ObjectAttributes;
     UNICODE_STRING KeyName;
     UNICODE_STRING ValueName;
-
     HANDLE KeyHandle;
     NTSTATUS Status;
+    WCHAR Value[sizeof("FFFFFFFF")];
 
     Entry = GetCurrentListEntry(List);
-    if (Entry == NULL)
+    if (!Entry)
         return FALSE;
 
-    LanguageId = ((PGENENTRY)GetListEntryData(Entry))->Id;
-    if (LanguageId == NULL)
+    LocaleId = ((PGENENTRY)GetListEntryData(Entry))->Id.Ul;
+    if (LocaleId == 0)
         return FALSE;
 
-    DPRINT("LanguageId: %S\n", LanguageId);
+    Status = RtlStringCchPrintfW(Value, _countof(Value), L"%08lx", LocaleId);
+    ASSERT(NT_SUCCESS(Status));
+
+    DPRINT("LocaleId: %S\n", LocaleId);
 
     /* Open the default users locale key */
     RtlInitUnicodeString(&KeyName,
@@ -1023,8 +1025,8 @@ ProcessLocaleRegistry(
                            &ValueName,
                            0,
                            REG_SZ,
-                           (PVOID)LanguageId,
-                           (wcslen(LanguageId) + 1) * sizeof(WCHAR));
+                           (PVOID)Value,
+                           (wcslen(Value) + 1) * sizeof(WCHAR));
     NtClose(KeyHandle);
     if (!NT_SUCCESS(Status))
     {
@@ -1032,9 +1034,9 @@ ProcessLocaleRegistry(
         return FALSE;
     }
 
-    /* Skip first 4 zeroes */
-    if (wcslen(LanguageId) >= 4)
-        LanguageId += 4;
+    /* Just get the language ID */
+    Status = RtlStringCchPrintfW(Value, _countof(Value), L"%04lx", LANGIDFROMLCID(LocaleId));
+    ASSERT(NT_SUCCESS(Status));
 
     /* Open the NLS language key */
     RtlInitUnicodeString(&KeyName,
@@ -1061,8 +1063,8 @@ ProcessLocaleRegistry(
                            &ValueName,
                            0,
                            REG_SZ,
-                           (PVOID)LanguageId,
-                           (wcslen(LanguageId) + 1) * sizeof(WCHAR));
+                           (PVOID)Value,
+                           (wcslen(Value) + 1) * sizeof(WCHAR));
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("NtSetValueKey() failed (Status %lx)\n", Status);
@@ -1076,8 +1078,8 @@ ProcessLocaleRegistry(
                            &ValueName,
                            0,
                            REG_SZ,
-                           (PVOID)LanguageId,
-                           (wcslen(LanguageId) + 1) * sizeof(WCHAR));
+                           (PVOID)Value,
+                           (wcslen(Value) + 1) * sizeof(WCHAR));
     NtClose(KeyHandle);
     if (!NT_SUCCESS(Status))
     {
@@ -1124,7 +1126,7 @@ GetDefaultLanguageIndex(VOID)
 typedef struct _LANG_ENTRY_PARAM
 {
     ULONG uIndex;
-    PWCHAR DefaultLanguage;
+    LANGID DefaultLanguage;
 } LANG_ENTRY_PARAM, *PLANG_ENTRY_PARAM;
 
 static UCHAR
@@ -1137,37 +1139,36 @@ ProcessLangEntry(
     IN PVOID Parameter OPTIONAL)
 {
     PLANG_ENTRY_PARAM LangEntryParam = (PLANG_ENTRY_PARAM)Parameter;
-
     PGENENTRY GenEntry;
-    SIZE_T IdSize, ValueSize;
+    SIZE_T ValueSize;
+    LANGID LangId;
 
-    if (!IsLanguageAvailable(KeyName))
+    LangId = (LANGID)(wcstoul(KeyName, NULL, 16) & 0xFFFF);
+    if (!IsLanguageAvailable(LangId))
     {
         /* The specified language is unavailable, skip the entry */
         return 2;
     }
 
-    IdSize    = (wcslen(KeyName)  + 1) * sizeof(WCHAR);
     ValueSize = (wcslen(KeyValue) + 1) * sizeof(WCHAR);
 
     GenEntry = RtlAllocateHeap(ProcessHeap, 0,
-                               sizeof(*GenEntry) + IdSize + ValueSize);
-    if (GenEntry == NULL)
+                               sizeof(*GenEntry) + ValueSize);
+    if (!GenEntry)
     {
         /* Failure, stop enumeration */
         DPRINT1("RtlAllocateHeap() failed\n");
         return 0;
     }
 
-    GenEntry->Id    = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry));
-    GenEntry->Value = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry) + IdSize);
-    RtlStringCbCopyW((PWSTR)GenEntry->Id, IdSize, KeyName);
+    GenEntry->Id.Ul = (ULONG_PTR)LangId;
+    GenEntry->Value = (PCWSTR)((ULONG_PTR)GenEntry + sizeof(*GenEntry));
     RtlStringCbCopyW((PWSTR)GenEntry->Value, ValueSize, KeyValue);
 
     *UserData = GenEntry;
     *Current  = FALSE;
 
-    if (!_wcsicmp(KeyName, LangEntryParam->DefaultLanguage))
+    if (LangId == LangEntryParam->DefaultLanguage)
         DefaultLanguageIndex = LangEntryParam->uIndex;
 
     LangEntryParam->uIndex++;
@@ -1178,30 +1179,29 @@ ProcessLangEntry(
 
 PGENERIC_LIST
 CreateLanguageList(
-    IN HINF InfFile,
-    OUT PWSTR DefaultLanguage)
+    _In_ HINF InfFile,
+    _Out_ LANGID* DefaultLanguage)
 {
     PGENERIC_LIST List;
     INFCONTEXT Context;
     PCWSTR KeyValue;
-
     LANG_ENTRY_PARAM LangEntryParam;
 
-    LangEntryParam.uIndex = 0;
-    LangEntryParam.DefaultLanguage = DefaultLanguage;
-
-    /* Get default language id */
+    /* Get default language ID */
     if (!SpInfFindFirstLine(InfFile, L"NLS", L"DefaultLanguage", &Context))
         return NULL;
 
+    /* This is a <= 8-character long hexadecimal string */
     if (!INF_GetData(&Context, NULL, &KeyValue))
         return NULL;
-
-    wcscpy(DefaultLanguage, KeyValue);
+    *DefaultLanguage = (LANGID)(wcstoul(KeyValue, NULL, 16) & 0xFFFF);
 
     List = CreateGenericList();
-    if (List == NULL)
+    if (!List)
         return NULL;
+
+    LangEntryParam.uIndex = 0;
+    LangEntryParam.DefaultLanguage = *DefaultLanguage;
 
     if (AddEntriesFromInfSection(List,
                                  InfFile,
@@ -1218,8 +1218,7 @@ CreateLanguageList(
     if (LangEntryParam.uIndex == 1)
     {
         DefaultLanguageIndex = 0;
-        wcscpy(DefaultLanguage,
-               ((PGENENTRY)GetListEntryData(GetFirstListEntry(List)))->Id);
+        *DefaultLanguage = (LANGID)(((PGENENTRY)GetListEntryData(GetFirstListEntry(List)))->Id.Ul);
     }
 
     return List;
@@ -1228,9 +1227,9 @@ CreateLanguageList(
 
 PGENERIC_LIST
 CreateKeyboardLayoutList(
-    IN HINF InfFile,
-    IN PCWSTR LanguageId,
-    OUT PWSTR DefaultKBLayout)
+    _In_ HINF InfFile,
+    _In_ LANGID LanguageId,
+    _Out_ KLID* DefaultKBLayout)
 {
     PGENERIC_LIST List;
     INFCONTEXT Context;
@@ -1242,20 +1241,21 @@ CreateKeyboardLayoutList(
     if (!SpInfFindFirstLine(InfFile, L"NLS", L"DefaultLayout", &Context))
         return NULL;
 
+    /* This is a <= 8-character long hexadecimal string */
     if (!INF_GetData(&Context, NULL, &KeyValue))
         return NULL;
-
-    wcscpy(DefaultKBLayout, KeyValue);
+    *DefaultKBLayout = (KLID)wcstoul(KeyValue, NULL, 16);
 
     List = CreateGenericList();
-    if (List == NULL)
+    if (!List)
         return NULL;
 
     LayoutsList = MUIGetLayoutsList(LanguageId);
 
     do
     {
-        // NOTE: See https://svn.reactos.org/svn/reactos?view=revision&revision=68354
+        // NOTE: See https://git.reactos.org/?p=reactos.git;a=commit;h=785b2eb8b8c6222bb961f5368d51f1a50640dc96
+        // "Make the keyboard layouts selection not dependent on the selected language." r68354 CORE-9630
         if (AddEntriesFromInfSection(List,
                                      InfFile,
                                      L"KeyboardLayout",
@@ -1269,7 +1269,7 @@ CreateKeyboardLayoutList(
 
         uIndex++;
 
-    } while (LayoutsList[uIndex].LangID != NULL);
+    } while (LayoutsList[uIndex].LangID != 0);
 
     /* Check whether some keyboard layouts have been found */
     /* FIXME: Handle this case */
@@ -1286,32 +1286,32 @@ CreateKeyboardLayoutList(
 
 BOOLEAN
 ProcessKeyboardLayoutRegistry(
-    IN PGENERIC_LIST List,
-    IN PCWSTR LanguageId)
+    _In_ PGENERIC_LIST List,
+    _In_ LANGID LanguageId)
 {
     PGENERIC_LIST_ENTRY Entry;
-    PCWSTR LayoutId;
+    KLID LayoutId;
     const MUI_LAYOUTS* LayoutsList;
-    MUI_LAYOUTS NewLayoutsList[20];
+    MUI_LAYOUTS NewLayoutsList[20]; // Fixed size "20" is a hack. Please verify against lang/*.h
     ULONG uIndex;
     ULONG uOldPos = 0;
 
     Entry = GetCurrentListEntry(List);
-    if (Entry == NULL)
+    if (!Entry)
         return FALSE;
 
-    LayoutId = ((PGENENTRY)GetListEntryData(Entry))->Id;
-    if (LayoutId == NULL)
+    LayoutId = (KLID)(((PGENENTRY)GetListEntryData(Entry))->Id.Ul);
+    if (LayoutId == 0)
         return FALSE;
 
     LayoutsList = MUIGetLayoutsList(LanguageId);
 
-    if (_wcsicmp(LayoutsList[0].LayoutID, LayoutId) == 0)
+    if (LayoutsList[0].LayoutID == LayoutId)
         return TRUE;
 
-    for (uIndex = 1; LayoutsList[uIndex].LangID != NULL; uIndex++)
+    for (uIndex = 1; LayoutsList[uIndex].LangID != 0; ++uIndex)
     {
-        if (_wcsicmp(LayoutsList[uIndex].LayoutID, LayoutId) == 0)
+        if (LayoutsList[uIndex].LayoutID == LayoutId)
         {
             uOldPos = uIndex;
             continue;
@@ -1321,8 +1321,8 @@ ProcessKeyboardLayoutRegistry(
         NewLayoutsList[uIndex].LayoutID = LayoutsList[uIndex].LayoutID;
     }
 
-    NewLayoutsList[uIndex].LangID    = NULL;
-    NewLayoutsList[uIndex].LayoutID  = NULL;
+    NewLayoutsList[uIndex].LangID    = 0;
+    NewLayoutsList[uIndex].LayoutID  = 0;
     NewLayoutsList[uOldPos].LangID   = LayoutsList[0].LangID;
     NewLayoutsList[uOldPos].LayoutID = LayoutsList[0].LayoutID;
     NewLayoutsList[0].LangID         = LayoutsList[uOldPos].LangID;
@@ -1342,12 +1342,20 @@ ProcessKeyboardLayoutFiles(
 
 BOOLEAN
 SetGeoID(
-    IN PCWSTR Id)
+    _In_ GEOID GeoId)
 {
     NTSTATUS Status;
     OBJECT_ATTRIBUTES ObjectAttributes;
     UNICODE_STRING Name;
     HANDLE KeyHandle;
+    /*
+     * Buffer big enough to hold the NULL-terminated string L"4294967295",
+     * corresponding to the literal 0xFFFFFFFF (MAXULONG) in decimal.
+     */
+    WCHAR Value[sizeof("4294967295")];
+
+    Status = RtlStringCchPrintfW(Value, _countof(Value), L"%lu", GeoId);
+    ASSERT(NT_SUCCESS(Status));
 
     RtlInitUnicodeString(&Name,
                          L".DEFAULT\\Control Panel\\International\\Geo");
@@ -1370,12 +1378,12 @@ SetGeoID(
                            &Name,
                            0,
                            REG_SZ,
-                           (PVOID)Id,
-                           (wcslen(Id) + 1) * sizeof(WCHAR));
+                           (PVOID)Value,
+                           (wcslen(Value) + 1) * sizeof(WCHAR));
     NtClose(KeyHandle);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("NtSetValueKey() failed (Status = %lx)\n", Status);
+        DPRINT1("NtSetValueKey() failed (Status %lx)\n", Status);
         return FALSE;
     }
 

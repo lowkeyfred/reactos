@@ -123,8 +123,8 @@ typedef struct _USETUP_DATA
     PGENERIC_LIST LanguageList;
 
 /* Other stuff *****/
-    WCHAR LocaleID[9];
-    LANGID LanguageId;
+    LCID LocaleID;
+    LANGID LanguageId; // == LANGIDFROMLCID(LocaleID), or should we keep it separate?
 
     ULONG RequiredPartitionDiskSpace;
     WCHAR InstallationDirectory[MAX_PATH];
@@ -208,7 +208,7 @@ UpdateRegistry(
     /**/IN BOOLEAN RepairUpdateFlag,     /* HACK HACK! */
     /**/IN PPARTLIST PartitionList,      /* HACK HACK! */
     /**/IN WCHAR DestinationDriveLetter, /* HACK HACK! */
-    /**/IN PCWSTR SelectedLanguageId,    /* HACK HACK! */
+    /**/IN LANGID SelectedLanguageId,    /* HACK HACK! */
     IN PREGISTRY_STATUS_ROUTINE StatusRoutine OPTIONAL,
     IN PFONTSUBSTSETTINGS SubstSettings OPTIONAL);
 

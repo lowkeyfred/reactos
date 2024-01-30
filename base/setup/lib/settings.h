@@ -26,10 +26,14 @@
 
 #pragma once
 
-/* Settings entries with simple 1:1 mapping */
+/* Setting entries with simple 1:1 mapping */
 typedef struct _GENENTRY
 {
-    PCWSTR Id;
+    union
+    {
+        PCWSTR Str;
+        ULONG_PTR Ul;
+    } Id;
     PCWSTR Value;
 } GENENTRY, *PGENENTRY;
 
@@ -58,22 +62,22 @@ CreateKeyboardDriverList(
 
 PGENERIC_LIST
 CreateKeyboardLayoutList(
-    IN HINF InfFile,
-    IN PCWSTR LanguageId,
-    OUT PWSTR DefaultKBLayout);
+    _In_ HINF InfFile,
+    _In_ LANGID LanguageId,
+    _Out_ KLID* DefaultKBLayout);
 
 PGENERIC_LIST
 CreateLanguageList(
-    IN HINF InfFile,
-    OUT PWSTR DefaultLanguage);
+    _In_ HINF InfFile,
+    _Out_ LANGID* DefaultLanguage);
 
 ULONG
 GetDefaultLanguageIndex(VOID);
 
 BOOLEAN
 ProcessKeyboardLayoutRegistry(
-    IN PGENERIC_LIST List,
-    IN PCWSTR LanguageId);
+    _In_ PGENERIC_LIST List,
+    _In_ LANGID LanguageId);
 
 BOOLEAN
 ProcessKeyboardLayoutFiles(
@@ -85,7 +89,7 @@ ProcessLocaleRegistry(
 
 BOOLEAN
 SetGeoID(
-    IN PCWSTR Id);
+    _In_ GEOID GeoId);
 
 BOOLEAN
 SetDefaultPagefile(

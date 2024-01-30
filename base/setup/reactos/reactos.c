@@ -1943,8 +1943,6 @@ PrepareAndDoCopyThread(
     SendMessageW(hWndProgress,
                  PBM_SETPOS, 0, 0);
 
-__debugbreak();
-
     ErrorNumber = UpdateRegistry(&pSetupData->USetupData,
                                  pSetupData->RepairUpdateFlag,
                                  pSetupData->PartitionList,
@@ -2281,7 +2279,7 @@ BOOL LoadSetupData(
     pSetupData->USetupData.DisplayList = CreateDisplayDriverList(pSetupData->USetupData.SetupInf);
     pSetupData->USetupData.KeyboardList = CreateKeyboardDriverList(pSetupData->USetupData.SetupInf);
 
-    pSetupData->USetupData.LanguageList = CreateLanguageList(pSetupData->USetupData.SetupInf, pSetupData->DefaultLanguage);
+    pSetupData->USetupData.LanguageList = CreateLanguageList(pSetupData->USetupData.SetupInf, &pSetupData->DefaultLanguage);
 
     pSetupData->PartitionList = CreatePartitionList();
 
@@ -2292,43 +2290,10 @@ BOOL LoadSetupData(
 
     /* new part */
     pSetupData->SelectedLanguageId = pSetupData->DefaultLanguage;
-    wcscpy(pSetupData->DefaultLanguage, pSetupData->USetupData.LocaleID);
-    pSetupData->USetupData.LanguageId = (LANGID)(wcstol(pSetupData->SelectedLanguageId, NULL, 16) & 0xFFFF);
+    pSetupData->DefaultLanguage = pSetupData->USetupData.LocaleID;
+    pSetupData->USetupData.LanguageId = pSetupData->SelectedLanguageId;
 
-    pSetupData->USetupData.LayoutList = CreateKeyboardLayoutList(pSetupData->USetupData.SetupInf, pSetupData->SelectedLanguageId, pSetupData->DefaultKBLayout);
-
-#if 0
-    // get default for keyboard and language
-    pSetupData->DefaultKBLayout = -1;
-    pSetupData->DefaultLang = -1;
-
-    // TODO: get defaults from underlaying running system
-    if (SetupFindFirstLine(pSetupData->USetupData.SetupInf, _T("NLS"), _T("DefaultLayout"), &InfContext))
-    {
-        SetupGetStringField(&InfContext, 1, tmp, ARRAYSIZE(tmp), &LineLength);
-        for (Count = 0; Count < pSetupData->KbLayoutCount; Count++)
-        {
-            if (_tcscmp(tmp, pSetupData->pKbLayouts[Count].LayoutId) == 0)
-            {
-                pSetupData->DefaultKBLayout = Count;
-                break;
-            }
-        }
-    }
-
-    if (SetupFindFirstLine(pSetupData->USetupData.SetupInf, _T("NLS"), _T("DefaultLanguage"), &InfContext))
-    {
-        SetupGetStringField(&InfContext, 1, tmp, ARRAYSIZE(tmp), &LineLength);
-        for (Count = 0; Count < pSetupData->LangCount; Count++)
-        {
-            if (_tcscmp(tmp, pSetupData->pLanguages[Count].LangId) == 0)
-            {
-                pSetupData->DefaultLang = Count;
-                break;
-            }
-        }
-    }
-#endif
+    pSetupData->USetupData.LayoutList = CreateKeyboardLayoutList(pSetupData->USetupData.SetupInf, pSetupData->SelectedLanguageId, &pSetupData->DefaultKBLayout);
 
     return ret;
 }

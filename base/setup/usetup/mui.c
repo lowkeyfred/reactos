@@ -57,21 +57,18 @@ FindLanguageIndex(VOID)
 {
     ULONG lngIndex = 0;
 
-    if (SelectedLanguageId == NULL)
+    if (SelectedLanguageId == 0)
     {
         /* Default to en-US */
-        return 0;   // FIXME!!
-        // SelectedLanguageId = L"00000409";
+        return 0; // FIXME!!
+        // SelectedLanguageId = 0x0409;
     }
 
     while (ResourceList[lngIndex].MuiPages != NULL)
     {
-        if (_wcsicmp(ResourceList[lngIndex].LanguageID, SelectedLanguageId) == 0)
-        {
+        if (ResourceList[lngIndex].LanguageID == SelectedLanguageId)
             return lngIndex;
-        }
-
-        lngIndex++;
+        ++lngIndex;
     }
 
     return 0;
@@ -81,16 +78,15 @@ FindLanguageIndex(VOID)
 #if 0
 BOOLEAN
 IsLanguageAvailable(
-    PWCHAR LanguageId)
+    _In_ LANGID LanguageId)
 {
     ULONG lngIndex = 0;
 
     while (ResourceList[lngIndex].MuiPages != NULL)
     {
-        if (_wcsicmp(ResourceList[lngIndex].LanguageID, LanguageId) == 0)
+        if (ResourceList[lngIndex].LanguageID == LanguageId)
             return TRUE;
-
-        lngIndex++;
+        ++lngIndex;
     }
 
     return FALSE;
@@ -105,9 +101,9 @@ FindMUIEntriesOfPage(
 {
     ULONG muiIndex = 0;
     ULONG lngIndex;
-    const MUI_PAGE * Pages = NULL;
+    const MUI_PAGE* Pages;
 
-    lngIndex = max(FindLanguageIndex(), 0);
+    lngIndex = FindLanguageIndex();
     Pages = ResourceList[lngIndex].MuiPages;
 
     while (Pages[muiIndex].MuiEntry != NULL)
@@ -125,7 +121,7 @@ static
 const MUI_ERROR *
 FindMUIErrorEntries(VOID)
 {
-    ULONG lngIndex = max(FindLanguageIndex(), 0);
+    ULONG lngIndex = FindLanguageIndex();
     return ResourceList[lngIndex].MuiErrors;
 }
 
@@ -133,7 +129,7 @@ static
 const MUI_STRING *
 FindMUIStringEntries(VOID)
 {
-    ULONG lngIndex = max(FindLanguageIndex(), 0);
+    ULONG lngIndex = FindLanguageIndex();
     return ResourceList[lngIndex].MuiStrings;
 }
 
@@ -267,7 +263,8 @@ MUIGetString(
         }
     }
 
-    sprintf(szErr, "Error: failed find string id %lu for language index %lu\n", Number, FindLanguageIndex());
+    sprintf(szErr, "Error: failed find string id %lu for language index %lu\n",
+            Number, FindLanguageIndex());
 
     PopupError(szErr,
                NULL,
@@ -540,12 +537,11 @@ SetConsoleCodePage(VOID)
 
 #if 0
     ULONG lngIndex = 0;
-
     while (ResourceList[lngIndex].MuiPages != NULL)
     {
-        if (_wcsicmp(ResourceList[lngIndex].LanguageID, SelectedLanguageId) == 0)
+        if (ResourceList[lngIndex].LanguageID == SelectedLanguageId)
         {
-            wCodePage = (UINT) wcstoul(ResourceList[lngIndex].OEMCPage, NULL, 10);
+            wCodePage = ResourceList[lngIndex].OEMCPage;
             SetConsoleOutputCP(wCodePage);
             return;
         }
@@ -553,7 +549,7 @@ SetConsoleCodePage(VOID)
         lngIndex++;
     }
 #else
-    wCodePage = (UINT)wcstoul(MUIGetOEMCodePage(SelectedLanguageId), NULL, 10);
+    wCodePage = MUIGetOEMCodePage(SelectedLanguageId);
     SetConsoleOutputCP(wCodePage);
 #endif
 

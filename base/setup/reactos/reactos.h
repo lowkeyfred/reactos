@@ -145,11 +145,9 @@ typedef struct _SETUPDATA
     LONG SelectedLangId; // selected language (table index)
 
     /* txtsetup.sif data */
-    // LONG DefaultLang;     // default language (table index)
-    // LONG DefaultKBLayout; // default keyboard layout (table index)
-    PCWSTR SelectedLanguageId;
-    WCHAR DefaultLanguage[20];   // Copy of string inside LanguageList
-    WCHAR DefaultKBLayout[20];   // Copy of string inside KeyboardList
+    LANGID SelectedLanguageId;
+    LANGID DefaultLanguage; // default language
+    KLID DefaultKBLayout;   // default keyboard layout
 
 } SETUPDATA, *PSETUPDATA;
 

@@ -62,9 +62,9 @@ static PPARTENTRY SystemPartition = NULL;
 
 /* OTHER Stuff *****/
 
-PCWSTR SelectedLanguageId;
-static WCHAR DefaultLanguage[20];   // Copy of string inside LanguageList
-static WCHAR DefaultKBLayout[20];   // Copy of string inside KeyboardList
+LANGID SelectedLanguageId;
+static LANGID DefaultLanguage;
+static KLID DefaultKBLayout;
 
 static BOOLEAN RepairUpdateFlag = FALSE;
 
@@ -455,14 +455,14 @@ static VOID
 UpdateKBLayout(VOID)
 {
     PGENERIC_LIST_ENTRY ListEntry;
-    PCWSTR pszNewLayout;
+    KLID newLayout;
 
-    pszNewLayout = MUIDefaultKeyboardLayout(SelectedLanguageId);
+    newLayout = MUIDefaultKeyboardLayout(SelectedLanguageId);
 
-    if (USetupData.LayoutList == NULL)
+    if (!USetupData.LayoutList)
     {
-        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, DefaultKBLayout);
-        if (USetupData.LayoutList == NULL)
+        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, &DefaultKBLayout);
+        if (!USetupData.LayoutList)
         {
             /* FIXME: Handle error! */
             return;
@@ -470,12 +470,12 @@ UpdateKBLayout(VOID)
     }
 
     /* Search for default layout (if provided) */
-    if (pszNewLayout != NULL)
+    if (newLayout != 0)
     {
         for (ListEntry = GetFirstListEntry(USetupData.LayoutList); ListEntry;
              ListEntry = GetNextListEntry(ListEntry))
         {
-            if (!wcscmp(pszNewLayout, ((PGENENTRY)GetListEntryData(ListEntry))->Id))
+            if (newLayout == (KLID)(((PGENENTRY)GetListEntryData(ListEntry))->Id.Ul))
             {
                 SetCurrentListEntry(USetupData.LayoutList, ListEntry);
                 break;
@@ -548,13 +548,13 @@ static PAGE_NUMBER
 LanguagePage(PINPUT_RECORD Ir)
 {
     GENERIC_LIST_UI ListUi;
-    PCWSTR NewLanguageId;
+    LANGID NewLanguageId;
     BOOL RefreshPage = FALSE;
 
     /* Initialize the computer settings list */
     if (USetupData.LanguageList == NULL)
     {
-        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, DefaultLanguage);
+        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, &DefaultLanguage);
         if (USetupData.LanguageList == NULL)
         {
            PopupError("Setup failed to initialize available translations", NULL, NULL, POPUP_WAIT_NONE);
@@ -575,7 +575,7 @@ LanguagePage(PINPUT_RECORD Ir)
      */
     if (GetNumberOfListEntries(USetupData.LanguageList) <= 1)
     {
-        USetupData.LanguageId = (LANGID)(wcstol(SelectedLanguageId, NULL, 16) & 0xFFFF);
+        USetupData.LanguageId = SelectedLanguageId;
         return WELCOME_PAGE;
     }
 
@@ -630,14 +630,12 @@ LanguagePage(PINPUT_RECORD Ir)
             ASSERT(GetNumberOfListEntries(USetupData.LanguageList) >= 1);
 
             SelectedLanguageId =
-                ((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id;
+                (LANGID)(((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id.Ul);
 
-            USetupData.LanguageId = (LANGID)(wcstol(SelectedLanguageId, NULL, 16) & 0xFFFF);
+            USetupData.LanguageId = SelectedLanguageId;
 
-            if (wcscmp(SelectedLanguageId, DefaultLanguage))
-            {
+            if (SelectedLanguageId == DefaultLanguage)
                 UpdateKBLayout();
-            }
 
             /* Load the font */
             SetConsoleCodePage();
@@ -656,9 +654,9 @@ LanguagePage(PINPUT_RECORD Ir)
             ASSERT(GetNumberOfListEntries(USetupData.LanguageList) >= 1);
 
             NewLanguageId =
-                ((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id;
+                (LANGID)(((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id.Ul);
 
-            if (wcscmp(SelectedLanguageId, NewLanguageId))
+            if (SelectedLanguageId == NewLanguageId)
             {
                 /* Clear the language page */
                 MUIClearPage(LANGUAGE_PAGE);
@@ -714,7 +712,7 @@ SetupStartPage(PINPUT_RECORD Ir)
 {
     ULONG Error;
     PGENERIC_LIST_ENTRY ListEntry;
-    PCWSTR LocaleId;
+    LCID LocaleId;
 
     MUIDisplayPage(SETUP_INIT_PAGE);
 
@@ -745,23 +743,23 @@ SetupStartPage(PINPUT_RECORD Ir)
         USetupData.DisplayList = CreateDisplayDriverList(USetupData.SetupInf);
         USetupData.KeyboardList = CreateKeyboardDriverList(USetupData.SetupInf);
 
-        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, DefaultLanguage);
+        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, &DefaultLanguage);
 
         /* new part */
         SelectedLanguageId = DefaultLanguage;
-        wcscpy(DefaultLanguage, USetupData.LocaleID);
-        USetupData.LanguageId = (LANGID)(wcstol(SelectedLanguageId, NULL, 16) & 0xFFFF);
+        DefaultLanguage = LANGIDFROMLCID(USetupData.LocaleID);
+        USetupData.LanguageId = SelectedLanguageId;
 
-        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, DefaultKBLayout);
+        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, &DefaultKBLayout);
 
         /* first we hack LanguageList */
         for (ListEntry = GetFirstListEntry(USetupData.LanguageList); ListEntry;
              ListEntry = GetNextListEntry(ListEntry))
         {
-            LocaleId = ((PGENENTRY)GetListEntryData(ListEntry))->Id;
-            if (!wcsicmp(USetupData.LocaleID, LocaleId))
+            LocaleId = (LCID)(((PGENENTRY)GetListEntryData(ListEntry))->Id.Ul);
+            if (USetupData.LocaleID == LocaleId)
             {
-                DPRINT("found %S in LanguageList\n", LocaleId);
+                DPRINT("Found 0x%08lx in LanguageList\n", LocaleId);
                 SetCurrentListEntry(USetupData.LanguageList, ListEntry);
                 break;
             }
@@ -771,10 +769,10 @@ SetupStartPage(PINPUT_RECORD Ir)
         for (ListEntry = GetFirstListEntry(USetupData.LayoutList); ListEntry;
              ListEntry = GetNextListEntry(ListEntry))
         {
-            LocaleId = ((PGENENTRY)GetListEntryData(ListEntry))->Id;
-            if (!wcsicmp(USetupData.LocaleID, LocaleId))
+            LocaleId = (LCID)(((PGENENTRY)GetListEntryData(ListEntry))->Id.Ul);
+            if (USetupData.LocaleID == LocaleId)
             {
-                DPRINT("found %S in LayoutList\n", LocaleId);
+                DPRINT("Found 0x%08lx in LayoutList\n", LocaleId);
                 SetCurrentListEntry(USetupData.LayoutList, ListEntry);
                 break;
             }
@@ -1248,7 +1246,7 @@ DeviceSettingsPage(PINPUT_RECORD Ir)
     /* Initialize the keyboard layout list */
     if (USetupData.LayoutList == NULL)
     {
-        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, DefaultKBLayout);
+        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, &DefaultKBLayout);
         if (USetupData.LayoutList == NULL)
         {
             /* FIXME: report error */
