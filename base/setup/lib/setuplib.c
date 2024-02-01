@@ -50,7 +50,7 @@ CheckUnattendedSetup(
     UnattendInf = SpInfOpenInfFile(UnattendInfPath,
                                    NULL,
                                    INF_STYLE_OLDNT,
-                                   pSetupData->LanguageId,
+                                   LANGIDFROMLCID(pSetupData->LocaleID),
                                    &ErrorLine);
     if (UnattendInf == INVALID_HANDLE_VALUE)
     {
@@ -515,7 +515,7 @@ LoadSetupInf(
         SpInfOpenInfFile(FileNameBuffer,
                          NULL,
                          INF_STYLE_WIN4,
-                         pSetupData->LanguageId,
+                         LANGIDFROMLCID(pSetupData->LocaleID),
                          &ErrorLine);
     if (pSetupData->SetupInf == INVALID_HANDLE_VALUE)
         return ERROR_LOAD_TXTSETUPSIF;
@@ -1005,7 +1005,6 @@ UpdateRegistry(
     /**/IN BOOLEAN RepairUpdateFlag,     /* HACK HACK! */
     /**/IN PPARTLIST PartitionList,      /* HACK HACK! */
     /**/IN WCHAR DestinationDriveLetter, /* HACK HACK! */
-    /**/IN LANGID SelectedLanguageId,    /* HACK HACK! */
     IN PREGISTRY_STATUS_ROUTINE StatusRoutine OPTIONAL,
     IN PFONTSUBSTSETTINGS SubstSettings OPTIONAL)
 {
@@ -1018,6 +1017,7 @@ UpdateRegistry(
     BOOLEAN Success;
     BOOLEAN ShouldRepairRegistry = FALSE;
     BOOLEAN Delete;
+    LANGID SelectedLanguageId = LANGIDFROMLCID(pSetupData->LocaleID);
 
 __debugbreak();
 
@@ -1133,7 +1133,7 @@ DoUpdate:
 
         if (!ImportRegistryFile(pSetupData->SourcePath.Buffer,
                                 File, Section,
-                                pSetupData->LanguageId, Delete))
+                                LANGIDFROMLCID(pSetupData->LocaleID), Delete))
         {
             DPRINT1("Importing %S failed\n", File);
             INF_FreeData(File);
@@ -1149,7 +1149,18 @@ DoUpdate:
 
         /* Update display registry settings */
         if (StatusRoutine) StatusRoutine(DisplaySettingsUpdate);
-        if (!ProcessDisplayRegistry(pSetupData->SetupInf, pSetupData->DisplayList))
+        {
+            /// Sanity check for list consistency
+            PGENERIC_LIST_ENTRY Entry;
+            // PCWSTR DisplayType;
+            Entry = GetCurrentListEntry(pSetupData->DisplayList);
+            ASSERT(Entry);
+            // DisplayType = ((PGENENTRY)GetListEntryData(Entry))->Id.Str;
+            // ASSERT(DisplayType);
+            // ASSERT(pSetupData->DisplayType == DisplayType);
+        }
+        if (!ProcessDisplayRegistry(pSetupData->SetupInf,
+                                    ((PGENENTRY)GetListEntryData(GetCurrentListEntry(pSetupData->DisplayList)))->Id.Str))
         {
             ErrorNumber = ERROR_UPDATE_DISPLAY_SETTINGS;
             goto Cleanup;
@@ -1157,7 +1168,17 @@ DoUpdate:
 
         /* Set the locale */
         if (StatusRoutine) StatusRoutine(LocaleSettingsUpdate);
-        if (!ProcessLocaleRegistry(pSetupData->LanguageList))
+        {
+            /// Sanity check for list consistency
+            PGENERIC_LIST_ENTRY Entry;
+            LCID LocaleId;
+            Entry = GetCurrentListEntry(pSetupData->LanguageList);
+            ASSERT(Entry);
+            LocaleId = (LCID)(((PGENENTRY)GetListEntryData(Entry))->Id.Ul);
+            ASSERT(LocaleId != 0);
+            ASSERT(pSetupData->LocaleID == LocaleId);
+        }
+        if (!ProcessLocaleRegistry(pSetupData->LocaleID))
         {
             ErrorNumber = ERROR_UPDATE_LOCALESETTINGS;
             goto Cleanup;
@@ -1182,7 +1203,17 @@ DoUpdate:
         {
             /* Update keyboard layout settings */
             if (StatusRoutine) StatusRoutine(KeybSettingsUpdate);
-            if (!ProcessKeyboardLayoutRegistry(pSetupData->LayoutList, SelectedLanguageId))
+            {
+                /// Sanity check for list consistency
+                PGENERIC_LIST_ENTRY Entry;
+                KLID LayoutId;
+                Entry = GetCurrentListEntry(pSetupData->LayoutList);
+                ASSERT(Entry);
+                LayoutId = (KLID)(((PGENENTRY)GetListEntryData(Entry))->Id.Ul);
+                ASSERT(LayoutId != 0);
+                ASSERT(pSetupData->LayoutId == LayoutId);
+            }
+            if (!ProcessKeyboardLayoutRegistry(pSetupData->LayoutId, SelectedLanguageId))
             {
                 ErrorNumber = ERROR_UPDATE_KBSETTINGS;
                 goto Cleanup;

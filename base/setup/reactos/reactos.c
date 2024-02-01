@@ -1947,7 +1947,6 @@ PrepareAndDoCopyThread(
                                  pSetupData->RepairUpdateFlag,
                                  pSetupData->PartitionList,
                                  InstallPartition->Volume.DriveLetter,
-                                 pSetupData->SelectedLanguageId,
                                  RegistryStatus,
                                  NULL /* SubstSettings */);
     UNREFERENCED_PARAMETER(ErrorNumber);
@@ -2268,10 +2267,7 @@ BOOL LoadSetupData(
     IN OUT PSETUPDATA pSetupData)
 {
     BOOL ret = TRUE;
-    // INFCONTEXT InfContext;
-    // TCHAR tmp[10];
-    // DWORD LineLength;
-    // LONG Count;
+    LANGID NewLanguageId = pSetupData->USetupData.LocaleID;
 
     /* Load the hardware, language and keyboard layout lists */
 
@@ -2279,7 +2275,7 @@ BOOL LoadSetupData(
     pSetupData->USetupData.DisplayList = CreateDisplayDriverList(pSetupData->USetupData.SetupInf);
     pSetupData->USetupData.KeyboardList = CreateKeyboardDriverList(pSetupData->USetupData.SetupInf);
 
-    pSetupData->USetupData.LanguageList = CreateLanguageList(pSetupData->USetupData.SetupInf, &pSetupData->DefaultLanguage);
+    pSetupData->USetupData.LanguageList = CreateLanguageList(pSetupData->USetupData.SetupInf, &NewLanguageId);
 
     pSetupData->PartitionList = CreatePartitionList();
 
@@ -2289,11 +2285,11 @@ BOOL LoadSetupData(
 
 
     /* new part */
-    pSetupData->SelectedLanguageId = pSetupData->DefaultLanguage;
-    pSetupData->DefaultLanguage = pSetupData->USetupData.LocaleID;
-    pSetupData->USetupData.LanguageId = pSetupData->SelectedLanguageId;
+    pSetupData->USetupData.LocaleID = (LCID)NewLanguageId;
 
-    pSetupData->USetupData.LayoutList = CreateKeyboardLayoutList(pSetupData->USetupData.SetupInf, pSetupData->SelectedLanguageId, &pSetupData->DefaultKBLayout);
+    pSetupData->USetupData.LayoutList = CreateKeyboardLayoutList(pSetupData->USetupData.SetupInf,
+                                                                 LANGIDFROMLCID(pSetupData->USetupData.LocaleID),
+                                                                 &pSetupData->USetupData.LayoutId);
 
     return ret;
 }

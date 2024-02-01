@@ -61,10 +61,7 @@ static PPARTENTRY SystemPartition = NULL;
 
 
 /* OTHER Stuff *****/
-
-LANGID SelectedLanguageId;
 static LANGID DefaultLanguage;
-static KLID DefaultKBLayout;
 
 static BOOLEAN RepairUpdateFlag = FALSE;
 
@@ -457,11 +454,13 @@ UpdateKBLayout(VOID)
     PGENERIC_LIST_ENTRY ListEntry;
     KLID newLayout;
 
-    newLayout = MUIDefaultKeyboardLayout(SelectedLanguageId);
+    newLayout = MUIDefaultKeyboardLayout(LANGIDFROMLCID(USetupData.LocaleID));
 
     if (!USetupData.LayoutList)
     {
-        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, &DefaultKBLayout);
+        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf,
+                                                         LANGIDFROMLCID(USetupData.LocaleID),
+                                                         &USetupData.LayoutId);
         if (!USetupData.LayoutList)
         {
             /* FIXME: Handle error! */
@@ -537,10 +536,6 @@ GetNTOSInstallationName(
  *
  * Next pages: WelcomePage, QuitPage
  *
- * SIDEEFFECTS
- *  Init SelectedLanguageId
- *  Init USetupData.LanguageId
- *
  * RETURNS
  *   Number of the next page.
  */
@@ -548,22 +543,23 @@ static PAGE_NUMBER
 LanguagePage(PINPUT_RECORD Ir)
 {
     GENERIC_LIST_UI ListUi;
-    LANGID NewLanguageId;
     BOOL RefreshPage = FALSE;
 
-    /* Initialize the computer settings list */
-    if (USetupData.LanguageList == NULL)
+    /* Initialize the language settings list */
+    LANGID NewLanguageId = USetupData.LocaleID;
+    if (!USetupData.LanguageList)
     {
-        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, &DefaultLanguage);
-        if (USetupData.LanguageList == NULL)
+        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, &NewLanguageId);
+        if (!USetupData.LanguageList)
         {
-           PopupError("Setup failed to initialize available translations", NULL, NULL, POPUP_WAIT_NONE);
-           return WELCOME_PAGE;
+            PopupError("Setup failed to initialize available translations", NULL, NULL, POPUP_WAIT_NONE);
+            return WELCOME_PAGE;
         }
     }
 
-    SelectedLanguageId = DefaultLanguage;
-    USetupData.LanguageId = 0;
+    USetupData.LocaleID = (LCID)NewLanguageId;
+/******/DefaultLanguage = LANGIDFROMLCID(USetupData.LocaleID);/*****/ // FIXME: Deprecate DefaultLanguage
+    SelectedLanguageId = LANGIDFROMLCID(USetupData.LocaleID); // FIXME: Should we keep SelectedLanguageId ?
 
     /* Load the font */
     SetConsoleCodePage();
@@ -574,10 +570,7 @@ LanguagePage(PINPUT_RECORD Ir)
      * skip the language selection process altogether.
      */
     if (GetNumberOfListEntries(USetupData.LanguageList) <= 1)
-    {
-        USetupData.LanguageId = SelectedLanguageId;
         return WELCOME_PAGE;
-    }
 
     InitGenericListUi(&ListUi, USetupData.LanguageList, GetSettingDescription);
     DrawGenericList(&ListUi,
@@ -630,11 +623,11 @@ LanguagePage(PINPUT_RECORD Ir)
             ASSERT(GetNumberOfListEntries(USetupData.LanguageList) >= 1);
 
             SelectedLanguageId =
-                (LANGID)(((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id.Ul);
+                (LCID)(((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id.Ul);
 
-            USetupData.LanguageId = SelectedLanguageId;
+            USetupData.LocaleID = SelectedLanguageId;
 
-            if (SelectedLanguageId == DefaultLanguage)
+            if (SelectedLanguageId != DefaultLanguage)
                 UpdateKBLayout();
 
             /* Load the font */
@@ -654,9 +647,9 @@ LanguagePage(PINPUT_RECORD Ir)
             ASSERT(GetNumberOfListEntries(USetupData.LanguageList) >= 1);
 
             NewLanguageId =
-                (LANGID)(((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id.Ul);
+                (LCID)(((PGENENTRY)GetListEntryData(GetCurrentListEntry(USetupData.LanguageList)))->Id.Ul);
 
-            if (SelectedLanguageId == NewLanguageId)
+            if (SelectedLanguageId != NewLanguageId)
             {
                 /* Clear the language page */
                 MUIClearPage(LANGUAGE_PAGE);
@@ -701,8 +694,6 @@ LanguagePage(PINPUT_RECORD Ir)
  *  Init USetupData.RequiredPartitionDiskSpace
  *  Init IsUnattendedSetup
  *  If unattended, init *List and sets the Codepage
- *  If unattended, init SelectedLanguageId
- *  If unattended, init USetupData.LanguageId
  *
  * RETURNS
  *   Number of the next page.
@@ -738,19 +729,17 @@ SetupStartPage(PINPUT_RECORD Ir)
     {
         // TODO: Read options from inf
         /* Load the hardware, language and keyboard layout lists */
+        LANGID NewLanguageId = USetupData.LocaleID;
 
         USetupData.ComputerList = CreateComputerTypeList(USetupData.SetupInf);
         USetupData.DisplayList = CreateDisplayDriverList(USetupData.SetupInf);
         USetupData.KeyboardList = CreateKeyboardDriverList(USetupData.SetupInf);
 
-        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, &DefaultLanguage);
+        USetupData.LanguageList = CreateLanguageList(USetupData.SetupInf, &NewLanguageId);
 
-        /* new part */
-        SelectedLanguageId = DefaultLanguage;
-        DefaultLanguage = LANGIDFROMLCID(USetupData.LocaleID);
-        USetupData.LanguageId = SelectedLanguageId;
-
-        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, &DefaultKBLayout);
+        USetupData.LocaleID = (LCID)NewLanguageId;
+/******/DefaultLanguage = LANGIDFROMLCID(USetupData.LocaleID);/*****/ // FIXME: Deprecate DefaultLanguage
+        SelectedLanguageId = LANGIDFROMLCID(USetupData.LocaleID); // FIXME: Should we keep SelectedLanguageId ?
 
         /* first we hack LanguageList */
         for (ListEntry = GetFirstListEntry(USetupData.LanguageList); ListEntry;
@@ -764,6 +753,10 @@ SetupStartPage(PINPUT_RECORD Ir)
                 break;
             }
         }
+
+        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf,
+                                                         LANGIDFROMLCID(USetupData.LocaleID),
+                                                         &USetupData.LayoutId);
 
         /* now LayoutList */
         for (ListEntry = GetFirstListEntry(USetupData.LayoutList); ListEntry;
@@ -1246,7 +1239,9 @@ DeviceSettingsPage(PINPUT_RECORD Ir)
     /* Initialize the keyboard layout list */
     if (USetupData.LayoutList == NULL)
     {
-        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf, SelectedLanguageId, &DefaultKBLayout);
+        USetupData.LayoutList = CreateKeyboardLayoutList(USetupData.SetupInf,
+                                                         LANGIDFROMLCID(USetupData.LocaleID),
+                                                         &USetupData.LayoutId);
         if (USetupData.LayoutList == NULL)
         {
             /* FIXME: report error */
@@ -3484,7 +3479,6 @@ RegistryPage(PINPUT_RECORD Ir)
                            RepairUpdateFlag,
                            PartitionList,
                            InstallPartition->Volume.DriveLetter,
-                           SelectedLanguageId,
                            RegistryStatus,
                            &s_SubstSettings);
     if (Error != ERROR_SUCCESS)

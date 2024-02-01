@@ -136,18 +136,8 @@ typedef struct _SETUPDATA
     PNTOS_INSTALLATION CurrentInstallation;
     PGENERIC_LIST NtOsInstallsList;
 
-
     /* Settings */
     LONG DestPartSize; // if partition doesn't exist, size of partition
-    LONG FSType;       // file system type on partition
-    LONG FormatPart;   // type of format the partition
-
-    LONG SelectedLangId; // selected language (table index)
-
-    /* txtsetup.sif data */
-    LANGID SelectedLanguageId;
-    LANGID DefaultLanguage; // default language
-    KLID DefaultKBLayout;   // default keyboard layout
 
 } SETUPDATA, *PSETUPDATA;
 

@@ -119,12 +119,15 @@ typedef struct _USETUP_DATA
     PGENERIC_LIST ComputerList;
     PGENERIC_LIST DisplayList;
     PGENERIC_LIST KeyboardList;
-    PGENERIC_LIST LayoutList;
     PGENERIC_LIST LanguageList;
+    PGENERIC_LIST LayoutList;
 
 /* Other stuff *****/
-    LCID LocaleID;
-    LANGID LanguageId; // == LANGIDFROMLCID(LocaleID), or should we keep it separate?
+    // PCWSTR ComputerType; // See ComputerList
+    // PCWSTR DisplayType;  // See DisplayList
+    // PCWSTR KeyboardDriver; // See KeyboardList
+    LCID LocaleID; // See LanguageList // Or just LANGID LanguageId == LANGIDFROMLCID(LocaleID) ?
+    KLID LayoutId; // See LayoutList   // DefaultKBLayout
 
     ULONG RequiredPartitionDiskSpace;
     WCHAR InstallationDirectory[MAX_PATH];
@@ -208,7 +211,6 @@ UpdateRegistry(
     /**/IN BOOLEAN RepairUpdateFlag,     /* HACK HACK! */
     /**/IN PPARTLIST PartitionList,      /* HACK HACK! */
     /**/IN WCHAR DestinationDriveLetter, /* HACK HACK! */
-    /**/IN LANGID SelectedLanguageId,    /* HACK HACK! */
     IN PREGISTRY_STATUS_ROUTINE StatusRoutine OPTIONAL,
     IN PFONTSUBSTSETTINGS SubstSettings OPTIONAL);
 

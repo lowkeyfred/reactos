@@ -42,6 +42,13 @@ IsLanguageAvailable(
     _In_ LANGID LanguageId);
 #endif
 
+extern LANGID SelectedLanguageId;
+#if 0
+VOID
+MUISetCurrentLanguage(
+    _In_ LANGID LanguageId);
+#endif
+
 VOID
 MUIDisplayPage(
     ULONG PageNumber);

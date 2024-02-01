@@ -47,14 +47,14 @@ CreateDisplayDriverList(
 
 BOOLEAN
 ProcessComputerFiles(
-    IN HINF InfFile,
-    IN PGENERIC_LIST List,
-    OUT PWSTR* AdditionalSectionName);
+    _In_ HINF InfFile,
+    _In_ PCWSTR ComputerType,
+    _Out_ PWSTR* AdditionalSectionName);
 
 BOOLEAN
 ProcessDisplayRegistry(
-    IN HINF InfFile,
-    IN PGENERIC_LIST List);
+    _In_ HINF InfFile,
+    _In_ PCWSTR DisplayType);
 
 PGENERIC_LIST
 CreateKeyboardDriverList(
@@ -76,16 +76,18 @@ GetDefaultLanguageIndex(VOID);
 
 BOOLEAN
 ProcessKeyboardLayoutRegistry(
-    _In_ PGENERIC_LIST List,
+    _In_ KLID LayoutId,
     _In_ LANGID LanguageId);
 
+#if 0
 BOOLEAN
 ProcessKeyboardLayoutFiles(
     IN PGENERIC_LIST List);
+#endif
 
 BOOLEAN
 ProcessLocaleRegistry(
-    IN PGENERIC_LIST List);
+    _In_ LCID LocaleId);
 
 BOOLEAN
 SetGeoID(

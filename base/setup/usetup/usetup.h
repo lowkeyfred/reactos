@@ -71,7 +71,6 @@
 
 extern HANDLE ProcessHeap;
 extern BOOLEAN IsUnattendedSetup;
-extern LANGID SelectedLanguageId;
 
 typedef enum _PAGE_NUMBER
 {

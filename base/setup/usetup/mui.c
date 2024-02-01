@@ -51,6 +51,7 @@ CHAR CharDoubleUpperRightCorner     = 0xBB; /* double upper right corner */
 CHAR CharDoubleLowerLeftCorner      = 0xC8; /* double lower left corner */
 CHAR CharDoubleLowerRightCorner     = 0xBC; /* double lower right corner */
 
+
 static
 ULONG
 FindLanguageIndex(VOID)
@@ -74,7 +75,6 @@ FindLanguageIndex(VOID)
     return 0;
 }
 
-
 #if 0
 BOOLEAN
 IsLanguageAvailable(
@@ -92,7 +92,6 @@ IsLanguageAvailable(
     return FALSE;
 }
 #endif
-
 
 static
 const MUI_ENTRY *
@@ -133,6 +132,15 @@ FindMUIStringEntries(VOID)
     return ResourceList[lngIndex].MuiStrings;
 }
 
+
+#if 0
+VOID
+MUISetCurrentLanguage(
+    _In_ LANGID LanguageId)
+{
+    SelectedLanguageId = LanguageId;
+}
+#endif
 
 VOID
 MUIClearPage(
